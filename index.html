@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>trace/log — Azure Troubleshooting Field Notes</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="index.html" class="logo"><span class="logo-dot"></span>trace/log</a>
+    <nav>
+      <a href="domains/web-apps.html">Web Apps</a>
+      <a href="domains/functions.html">Functions</a>
+      <a href="domains/container-apps.html">Container Apps</a>
+      <a href="domains/static-web-apps.html">Static Web Apps</a>
+      <a href="domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <div class="hero-eyebrow">Azure Support Engineering Field Notes</div>
+    <h1>Root causes, not <em>restart-and-hope</em>.</h1>
+    <p>Troubleshooting write-ups and hands-on tutorials across Azure Web Apps, Functions, Container Apps, and Static Web Apps — written the way an RCA should read.</p>
+
+    <div class="terminal">
+      <div class="terminal-bar">
+        <div class="terminal-dot"></div><div class="terminal-dot"></div><div class="terminal-dot"></div>
+        <div class="terminal-title">diagnostic-session</div>
+      </div>
+      <div class="terminal-body" id="termBody"></div>
+    </div>
+  </section>
+
+  <div class="section-label"><span class="idx">05</span> Coverage domains</div>
+  <div class="pillars">
+    <a href="domains/web-apps.html" class="pillar">
+      <span class="pillar-tag">WEB APPS</span>
+      <h3>App Service (PaaS)</h3>
+      <p>CPU/memory diagnostics, Kudu, VNET integration, scaling behavior.</p>
+    </a>
+    <a href="domains/functions.html" class="pillar">
+      <span class="pillar-tag">FUNCTIONS</span>
+      <h3>Serverless Compute</h3>
+      <p>Cold starts, bindings, Durable Functions, Application Insights.</p>
+    </a>
+    <a href="domains/container-apps.html" class="pillar">
+      <span class="pillar-tag">CONTAINER APPS</span>
+      <h3>ACA & Dapr</h3>
+      <p>Revision failures, ingress, sidecars, KQL for container logs.</p>
+    </a>
+    <a href="domains/static-web-apps.html" class="pillar">
+      <span class="pillar-tag">STATIC WEB APPS</span>
+      <h3>SWA & Edge</h3>
+      <p>Build failures, auth providers, linked API routing.</p>
+    </a>
+  </div>
+  <a href="domains/security-monitoring.html" class="pillar" style="display:block;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;">
+    <span class="pillar-tag">CROSS-CUTTING</span>
+    <h3>Security & Monitoring</h3>
+    <p>TLS/certs, identity & auth failures, KQL fundamentals, RCA writing — spans every domain above.</p>
+  </a>
+
+  <div class="section-label"><span class="idx">01</span> Latest across all domains</div>
+  <div class="queue">
+    <a href="posts/functions-cold-starts.html" class="ticket">
+      <span class="sev sev-2">FUNCTIONS · TROUBLESHOOTING</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Diagnosing Cold Start Failures in Consumption Plan Functions</div>
+        <div class="ticket-meta">8 min read · Application Insights · KQL</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="posts/webapps-high-cpu.html" class="ticket">
+      <span class="sev sev-1">WEB APPS · TROUBLESHOOTING</span>
+      <div class="ticket-body">
+        <div class="ticket-title">High CPU on App Service: reading Process Explorer correctly</div>
+        <div class="ticket-meta">9 min read · Kudu · Thread Pool</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="posts/functions-app-insights-kql-tutorial.html" class="ticket">
+      <span class="sev sev-tut">FUNCTIONS · TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Setting Up Application Insights and Writing Your First KQL Query</div>
+        <div class="ticket-meta">7 min read · Step-by-step · Beginner</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>5 domains · 3 posts live</span>
+  </footer>
+
+</div>
+
+<script>
+  const lines = [
+    {text:'$ az functionapp log tail --name contoso-api', cls:'prompt'},
+    {text:'Connecting to log stream...', cls:''},
+    {text:'[2026-08-06T09:14:02] Cold start detected. Duration: 4812ms', cls:'warn'},
+    {text:'[2026-08-06T09:14:02] Host initialized, 1 functions loaded', cls:''},
+    {text:'[2026-08-06T09:14:03] Executed GET /api/orders (200 OK)', cls:'ok'},
+  ];
+  const body = document.getElementById('termBody');
+  let li = 0, ci = 0;
+  function typeLine(){
+    if(li >= lines.length){ body.innerHTML += '<span class="cursor"></span>'; return; }
+    const current = lines[li];
+    if(ci === 0){
+      const div = document.createElement('div');
+      div.className = 'line ' + current.cls;
+      div.id = 'line-' + li;
+      body.appendChild(div);
+    }
+    const el = document.getElementById('line-' + li);
+    if(ci <= current.text.length){
+      el.textContent = current.text.slice(0, ci);
+      ci++;
+      setTimeout(typeLine, 12 + Math.random()*18);
+    } else { li++; ci = 0; setTimeout(typeLine, 260); }
+  }
+  typeLine();
+</script>
+
+</body>
+</html>
