@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SWA Build Passes, Site 404s: the routes.json Trap — trace/log</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><span class="logo-dot"></span>trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html" class="active">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/static-web-apps.html">Static Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>SWA Build Passes, Site 404s: the routes.json Trap</h1>
+    <div class="post-meta">
+      <span>GitHub Actions</span>
+      <span>staticwebapp.config.json</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>The GitHub Actions workflow for a Static Web App completes successfully — green checkmark, no build errors — but visiting the deployed site returns a 404, or specific client-side routes (like a React Router path) 404 on direct navigation or refresh, even though clicking through the app from the homepage works fine.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Static Web Apps with a single-page app framework (React, Vue, Angular) using client-side routing</li>
+      <li>Deployment via the Azure Static Web Apps GitHub Actions workflow</li>
+      <li>Build output located in a non-default folder, or a <code>staticwebapp.config.json</code> that's missing, misplaced, or has an incorrect fallback route</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Separate the two failure modes, because they have different causes:</p>
+    <ul>
+      <li><strong>The whole site 404s:</strong> check the workflow YAML's <code>app_location</code> and <code>output_location</code> values against where your build tool actually places its output. A mismatch means SWA is looking for files in the wrong folder even though the build itself succeeded.</li>
+      <li><strong>Only deep-linked or refreshed routes 404:</strong> this is a client-side routing fallback issue, not a build issue. The static file host doesn't know that <code>/dashboard/settings</code> should serve <code>index.html</code> and let your JS router take over — it looks for a literal file at that path and fails.</li>
+    </ul>
+    <p>Check whether <code>staticwebapp.config.json</code> exists in your <code>app_location</code> folder and gets included in the deployed output — a common mistake is placing it in the repo root when the build tool's output folder is what actually gets deployed, leaving the config file behind.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the homepage and in-app navigation work fine, teams often assume the site is fully functional and only discover the issue when a user bookmarks or refreshes a deep link — by which point it looks like a "random" bug rather than a routing configuration gap.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Static Web Apps serves files directly by path unless told otherwise. Single-page apps rely on the browser's JS router to handle paths client-side, which only works if the server falls back to serving <code>index.html</code> for unmatched routes. Without a correctly placed <code>staticwebapp.config.json</code> defining that fallback (via the <code>navigationFallback</code> setting), any direct request to a client-side route 404s at the server before your app's JavaScript ever runs.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Place the config correctly:</strong> put <code>staticwebapp.config.json</code> inside the folder your build tool outputs to production files (e.g. <code>dist</code> or <code>build</code>), or configure your build to copy it there — not just in the repo root, unless that's also your <code>app_location</code>.</li>
+      <li><strong>Add a navigation fallback:</strong> configure <code>navigationFallback.rewrite</code> to point to <code>/index.html</code> so unmatched routes fall back to your SPA entry point instead of 404ing.</li>
+      <li><strong>Exclude real static assets from the fallback:</strong> use <code>navigationFallback.exclude</code> so requests for actual files (images, JS bundles, API routes under <code>/api/*</code>) aren't incorrectly rewritten to <code>index.html</code>.</li>
+      <li><strong>Double-check build output paths:</strong> confirm <code>app_location</code> and <code>output_location</code> in the workflow YAML match your framework's actual build output folder (these differ between Create React App, Vite, Next.js static export, etc.).</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add a post-deploy smoke test to your CI pipeline that curls a known deep-linked route (not just the homepage) — a green build doesn't confirm routing works, only that the build step itself succeeded.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Static Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>"GLIBC Version Not Found": Diagnosing Base Image Mismatches — trace/log</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><span class="logo-dot"></span>trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>"GLIBC Version Not Found": Diagnosing Base Image Mismatches</h1>
+    <div class="post-meta">
+      <span>Base Images</span>
+      <span>Alpine vs Debian</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A container fails to start, and the logs show an error along the lines of <code>version 'GLIBC_2.XX' not found</code> or <code>Error loading shared library ... No such file or directory</code>. The image built and pushed successfully — it only fails at container startup, sometimes only after switching or updating a base image tag.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Apps or Web App for Containers running a custom image</li>
+      <li>Base image recently changed — commonly a move to or from an Alpine-based image</li>
+      <li>Application includes a precompiled binary or native dependency (a compiled language runtime, or a native Node/Python extension)</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>This error is almost always a signal that the binary was compiled against glibc (the GNU C Library used by Debian, Ubuntu, and most mainstream Linux distributions), but is now running inside a container based on Alpine Linux, which uses <strong>musl libc</strong> instead — a different, smaller C library that isn't binary-compatible with glibc.</p>
+    <ul>
+      <li>Check your Dockerfile's <code>FROM</code> line — did it change from a Debian/Ubuntu-based tag to an Alpine one (or vice versa) recently?</li>
+      <li>Run <code>ldd --version</code> inside the container (or a matching local container) to confirm which C library and version is present.</li>
+      <li>Identify which binary is throwing the error — it's frequently a native dependency pulled in transitively by a package manager, not code you wrote directly.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams sometimes assume this is a corrupted build or a registry caching issue and try rebuilding or re-pushing the same image repeatedly. The image is fine — it's simply built for a different C library than the one present at runtime.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Alpine's use of musl instead of glibc is a deliberate design choice that makes Alpine images very small, but it means any binary compiled expecting glibc symbols will fail to load on Alpine, and vice versa. This commonly surfaces after switching base images for size optimization, or after a base image maintainer changes the underlying distribution in a new tag without an obvious naming signal.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Match the base image to your binaries:</strong> if your dependencies are compiled against glibc, stay on a Debian/Ubuntu-based image rather than switching to Alpine purely for size.</li>
+      <li><strong>Rebuild for musl:</strong> if you specifically want Alpine's smaller footprint, rebuild native dependencies against musl (many ecosystems, like Node's <code>node:alpine</code> tags, publish musl-compatible builds — but third-party native modules may not).</li>
+      <li><strong>Use a glibc compatibility layer as a last resort:</strong> Alpine has a community <code>gcompat</code> package that provides partial glibc compatibility, but treat this as a stopgap, not a long-term fix — it doesn't cover every case.</li>
+      <li><strong>Pin base image tags explicitly:</strong> avoid loosely-versioned tags that could silently swap the underlying distribution out from under you between builds.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when evaluating a switch to Alpine for image size, test the full dependency tree in a local Alpine container before deploying — don't assume compatibility just because the build succeeds. Build success and runtime compatibility are separate questions for compiled dependencies.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+</div>
+</body>
+</html>
