@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revision Stuck in Provisioning: a Dapr Sidecar Checklist — trace/log</title>
+<meta name="description" content="A revision stuck in Provisioning with Dapr enabled usually means the sidecar failed to start. A checklist for diagnosing why.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Revision Stuck in Provisioning: a Dapr Sidecar Checklist — trace/log">
+<meta property="og:description" content="A revision stuck in Provisioning with Dapr enabled usually means the sidecar failed to start. A checklist for diagnosing why.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Revision Stuck in Provisioning: a Dapr Sidecar Checklist — trace/log">
+<meta name="twitter:description" content="A revision stuck in Provisioning with Dapr enabled usually means the sidecar failed to start. A checklist for diagnosing why.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-dapr-sidecar-checklist.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-dapr-sidecar-checklist.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><span class="logo-dot"></span>trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Revision Stuck in Provisioning: a Dapr Sidecar Checklist</h1>
+    <div class="post-meta">
+      <span>Dapr</span>
+      <span>Revisions</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A new revision of a Container App with Dapr enabled sits in "Provisioning" indefinitely, or eventually fails with a generic activation error. The container app itself may report as healthy in isolation, but traffic never reaches it, or the app can't reach other services it depends on via Dapr's service invocation.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Apps with Dapr enabled on one or more apps in the same environment</li>
+      <li>Service-to-service communication configured via Dapr's service invocation building block</li>
+      <li>Recent change to the Dapr configuration, app ID, or component definitions (state store, pub/sub bindings)</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Because Dapr runs as a sidecar alongside your application container, a stuck revision often means the sidecar itself failed to initialize — not necessarily your app code. Work through this checklist in order:</p>
+    <ul>
+      <li><strong>Check the Dapr app ID is unique</strong> within the environment. Two apps sharing the same <code>dapr-app-id</code> will conflict during service discovery.</li>
+      <li><strong>Pull the Dapr sidecar logs separately</strong> from the app container logs — in the portal or via <code>az containerapp logs show</code>, filter to the <code>daprd</code> container, not just your app's container. Sidecar init failures are invisible in application logs.</li>
+      <li><strong>Verify component definitions</strong> (state stores, pub/sub, secret stores) reference valid, reachable resources — a Dapr component pointing at a deleted or renamed backing resource will block sidecar startup.</li>
+      <li><strong>Confirm the Dapr port configuration</strong> matches what your application actually listens on — a mismatched <code>appPort</code> means the sidecar can't proxy traffic to your app even once both containers are technically running.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> engineers often restart or redeploy the app container repeatedly when the app itself is healthy — the sidecar is what's stuck. Always check both containers' logs independently before assuming which one is failing.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Dapr sidecars have their own startup sequence, separate from your application container, that includes registering with the placement service (for actors), resolving component definitions, and establishing the mTLS identity used for secure service-to-service calls. If any of these steps can't complete — an unreachable component backend, a naming conflict, a certificate issue — the sidecar won't reach a ready state, and Container Apps won't route traffic to a revision whose sidecar isn't healthy.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Fix the specific blocker identified in sidecar logs</strong> — a missing component, a bad connection string, or an app ID collision, rather than redeploying blindly.</li>
+      <li><strong>Validate component YAML separately</strong> before attaching it to the app — many mistakes are simple typos in resource names or scopes that are easy to catch in isolation.</li>
+      <li><strong>Scope components explicitly</strong> using the <code>scopes</code> field so only the apps that need a given component load it — this narrows the blast radius when a component definition is broken.</li>
+      <li><strong>Roll back to the last known-good revision</strong> while you fix the underlying component or configuration issue, since Container Apps supports keeping multiple revisions active during the investigation.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> treat Dapr component definitions as part of your deployment pipeline's validation step — lint or dry-run them before they reach the environment, the same way you'd validate any other infrastructure-as-code change.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+</div>
+</body>
+</html>

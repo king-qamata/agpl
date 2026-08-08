@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Writing an RCA Report That Survives a Postmortem — trace/log</title>
+<meta name="description" content="How to write an RCA report that holds up under scrutiny: timeline, diagnostic path, root cause as mechanism, and verifiable prevention.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Writing an RCA Report That Survives a Postmortem — trace/log">
+<meta property="og:description" content="How to write an RCA report that holds up under scrutiny: timeline, diagnostic path, root cause as mechanism, and verifiable prevention.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Writing an RCA Report That Survives a Postmortem — trace/log">
+<meta name="twitter:description" content="How to write an RCA report that holds up under scrutiny: timeline, diagnostic path, root cause as mechanism, and verifiable prevention.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/security-rca-writing-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/security-rca-writing-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><span class="logo-dot"></span>trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html" class="active">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/security-monitoring.html">Security & Monitoring</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Writing an RCA Report That Survives a Postmortem</h1>
+    <div class="post-meta">
+      <span>Process</span>
+      <span>Incident Response</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>Every troubleshooting post on this site ends with a root cause and a fix — but turning that into a report a team, a manager, or a customer can actually act on is its own skill. This walks through the structure that holds up under scrutiny, using the same five-part shape as the troubleshooting posts here.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>The incident is resolved or mitigated — write the RCA after stability, not during active firefighting</li>
+        <li>Access to the actual telemetry (logs, metrics, timestamps) used during diagnosis, not just your memory of it</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Write the symptom exactly as the customer or team experienced it</h4>
+        <p>Start with the observable impact, in plain language, before any technical detail: what broke, for whom, and for how long. Avoid leading with the root cause here — that comes later and biases the reader's understanding of what was actually visible during the incident.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Document the timeline with real timestamps</h4>
+        <p>Pull exact timestamps from your monitoring system, not approximate memory — "around 2pm" invites disputes later. Include: when the issue started, when it was detected, when mitigation began, and when it was resolved. This is also where you note any gap between "started" and "detected," which is often the most actionable finding in the whole report.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Walk through the diagnostic path, not just the conclusion</h4>
+        <p>Show what was checked and ruled out, in order — including dead ends. This is what separates a credible RCA from a guess dressed up as a finding: a reader should be able to follow the same investigation and reach the same conclusion independently.</p>
+      </li>
+      <li class="tut-step">
+        <h4>State the root cause as a mechanism, not a description</h4>
+        <p>"The app was slow" is a symptom restated, not a root cause. "Thread pool starvation from synchronous blocking calls under load" is a mechanism — it explains <em>why</em> the symptom occurred and implies what fixing it requires. If your stated root cause doesn't explain the full timeline, it's incomplete.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Separate the immediate fix from the follow-up action</h4>
+        <p>What stopped the bleeding (a restart, a scale-up, a rollback) is not the same as what prevents recurrence (a code fix, an alert, a process change). Conflating the two in one "resolution" section is a common way RCAs get challenged in review — list both explicitly, with owners and target dates for the follow-up items.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Add a prevention section with a specific, verifiable signal</h4>
+        <p>Not "we'll monitor this more closely" — a specific alert threshold, a new dashboard panel, or a test case that would have caught this before it reached production. A prevention item that can't be verified as done isn't actionable.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> a report that mirrors the same Symptom → Environment → Diagnosis → Root Cause → Fix structure used throughout this site — which isn't a coincidence. That structure exists specifically because it's what survives a skeptical reader asking "how do you know?" at every step.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Cross-cutting: Security & Monitoring · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>
