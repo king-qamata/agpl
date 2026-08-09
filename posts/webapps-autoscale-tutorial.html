@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configuring Autoscale Rules Based on CPU and Queue Length — trace/log</title>
+<meta name="description" content="Step-by-step: set up App Service autoscale rules that respond to both CPU percentage and queue length, with sensible cooldown periods to avoid flapping.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Configuring Autoscale Rules Based on CPU and Queue Length — trace/log">
+<meta property="og:description" content="Step-by-step: set up App Service autoscale rules that respond to both CPU percentage and queue length, with sensible cooldown periods to avoid flapping.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Configuring Autoscale Rules Based on CPU and Queue Length — trace/log">
+<meta name="twitter:description" content="Step-by-step: set up App Service autoscale rules that respond to both CPU percentage and queue length, with sensible cooldown periods to avoid flapping.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-autoscale-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-autoscale-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Configuring Autoscale Rules Based on CPU and Queue Length</h1>
+    <div class="post-meta">
+      <span>Intermediate</span>
+      <span>Autoscale</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>CPU-only autoscale rules react too slowly for workloads with bursty, queue-driven traffic — by the time CPU climbs, users have already felt it. This walks through combining a CPU rule with a queue length rule so scaling reacts to demand building up, not just resource pressure that's already arrived.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An App Service on a Standard tier or higher (autoscale requires this)</li>
+        <li>A Storage Queue or Service Bus queue your app processes work from, if using the queue-based rule</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Open the scale-out settings</h4>
+        <p>In the portal, go to your App Service Plan → <strong>Scale out (App Service plan)</strong>. Switch from "Manual scale" to <strong>Custom autoscale</strong>.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Add the CPU-based scale-out rule</h4>
+        <p>Under the default scale condition, add a rule: Metric = <strong>CPU Percentage</strong>, aggregation over the last 10 minutes, operator "Greater than", threshold around 70%, action "Increase count by 1", with a cooldown of 5 minutes.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Add the corresponding scale-in rule</h4>
+        <p>Add a second rule for the same metric: "Less than" a lower threshold (e.g. 30%), action "Decrease count by 1", with a longer cooldown (e.g. 10 minutes) — scaling in more cautiously than scaling out avoids flapping.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Add a queue length rule</h4>
+        <p>If your app processes background work from a queue, add a Custom metric source pointing at the Storage Queue or Service Bus namespace, metric "Approximate Message Count" (or the queue-specific equivalent), threshold set to whatever backlog size represents "falling behind" for your workload — this reacts to demand building up before CPU necessarily reflects it.</p>
+        <div class="code-block">
+          <div class="code-block-label">Reasoning — why combine both</div>
+          <pre>CPU rule:   reacts to compute pressure already happening
+Queue rule: reacts to backlog building, often *before* CPU rises
+Together:   scale-out triggers on whichever signal fires first</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Set instance limits</h4>
+        <p>Configure minimum and maximum instance counts for the scale condition — a minimum above 1 avoids a cold single instance handling a traffic spike alone, and a maximum protects against runaway cost from a misbehaving rule or genuine traffic anomaly.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Watch the Run history</h4>
+        <p>After deploying, check the <strong>Run history</strong> tab over the following days to confirm the rules are firing as expected and not flapping (repeatedly scaling in and out). Adjust cooldowns or thresholds if you see oscillation.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> autoscale that responds to both resource pressure and workload backlog, with cooldowns tuned to avoid the flapping that makes teams distrust autoscale in the first place.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

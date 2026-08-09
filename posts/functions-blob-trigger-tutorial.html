@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blob Trigger and Bindings Walkthrough, Start to Finish — trace/log</title>
+<meta name="description" content="Step-by-step: build a Function that triggers on a new blob upload, reads it via an input binding, and writes a result via an output binding.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Blob Trigger and Bindings Walkthrough, Start to Finish — trace/log">
+<meta property="og:description" content="Step-by-step: build a Function that triggers on a new blob upload, reads it via an input binding, and writes a result via an output binding.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Blob Trigger and Bindings Walkthrough, Start to Finish — trace/log">
+<meta name="twitter:description" content="Step-by-step: build a Function that triggers on a new blob upload, reads it via an input binding, and writes a result via an output binding.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-blob-trigger-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-blob-trigger-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Blob Trigger and Bindings Walkthrough, Start to Finish</h1>
+    <div class="post-meta">
+      <span>Beginner</span>
+      <span>Blob Storage</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>Blob-triggered Functions are one of the most common serverless patterns — process a file the moment it lands in storage. This builds one from scratch: trigger, input binding, and output binding, with the exact configuration details that the <a href="functions-missing-bindings.html" style="color:inherit;text-decoration:underline;">missing bindings post</a> on this site assumes you already have working.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>Azure Functions Core Tools and the Azure CLI installed</li>
+        <li>An existing Storage Account, or willingness to create one during this walkthrough</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Scaffold the function with a Blob trigger</h4>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>func init BlobDemo --worker-runtime dotnet
+cd BlobDemo
+func new --name ProcessUpload --template "Azure Blob Storage trigger"</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Set the connection in local.settings.json</h4>
+        <p>Point <code>AzureWebJobsStorage</code> (or a dedicated connection setting) at your storage account's connection string locally, so triggers resolve correctly before you ever deploy.</p>
+        <div class="code-block">
+          <div class="code-block-label">local.settings.json</div>
+          <pre>{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "&lt;your-connection-string&gt;",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet"
+  }
+}</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Confirm the trigger path in function.json</h4>
+        <p>The <code>path</code> value determines which container (and optional blob name pattern) fires the function — this is exactly the field that causes silent failures when it doesn't match the real container name.</p>
+        <div class="code-block">
+          <div class="code-block-label">function.json (generated) — key fields</div>
+          <pre>{
+  "bindings": [
+    {
+      "name": "myBlob",
+      "type": "blobTrigger",
+      "direction": "in",
+      "path": "uploads/{name}",
+      "connection": "AzureWebJobsStorage"
+    }
+  ]
+}</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Add an output binding</h4>
+        <p>Add a second binding to write a result — for example, a processed copy to a different container. Output bindings let you avoid writing storage SDK boilerplate for the common case.</p>
+        <div class="code-block">
+          <div class="code-block-label">function.json — add an output binding</div>
+          <pre>{
+  "name": "outputBlob",
+  "type": "blob",
+  "direction": "out",
+  "path": "processed/{name}",
+  "connection": "AzureWebJobsStorage"
+}</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Test locally with a real upload</h4>
+        <p>Run <code>func start</code>, then upload a test file to the <code>uploads</code> container using Azure Storage Explorer or the CLI, and confirm the function fires and a processed file appears in the <code>processed</code> container.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>az storage blob upload --account-name mystorageacct --container-name uploads --file test.txt --name test.txt</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Deploy and verify against the real trigger</h4>
+        <p>Publish with <code>func azure functionapp publish</code>, then repeat the upload test against production. If the function doesn't fire, the <a href="functions-missing-bindings.html" style="color:inherit;text-decoration:underline;">missing bindings troubleshooting post</a> covers exactly this failure mode and how to isolate it.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> a working Blob trigger with both input and output bindings, and a clear picture of which fields (connection name, path) are the ones that actually matter when something doesn't fire as expected.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

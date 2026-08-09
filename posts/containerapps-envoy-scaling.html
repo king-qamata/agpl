@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scaling Rules Not Triggering: Debugging the Envoy Proxy Layer — trace/log</title>
+<meta name="description" content="A Container App that won't scale despite traffic often has a working KEDA rule that never sees the traffic, because Envoy's ingress metrics differ from what you're measuring externally.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Scaling Rules Not Triggering: Debugging the Envoy Proxy Layer — trace/log">
+<meta property="og:description" content="A Container App that won't scale despite traffic often has a working KEDA rule that never sees the traffic, because Envoy's ingress metrics differ from what you're measuring externally.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Scaling Rules Not Triggering: Debugging the Envoy Proxy Layer — trace/log">
+<meta name="twitter:description" content="A Container App that won't scale despite traffic often has a working KEDA rule that never sees the traffic, because Envoy's ingress metrics differ from what you're measuring externally.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-envoy-scaling.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-envoy-scaling.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Scaling Rules Not Triggering: Debugging the Envoy Proxy Layer</h1>
+    <div class="post-meta">
+      <span>KEDA</span>
+      <span>Envoy Ingress</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An HTTP scale rule is configured on a Container App, real traffic is clearly arriving (client-side logs, an external monitor, or a load test confirm requests are being sent), but the app never scales past its minimum replica count. No errors appear anywhere — the app just silently stays flat.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Apps with an HTTP-based scale rule (concurrent requests threshold)</li>
+      <li>Traffic arriving through the app's external or internal ingress</li>
+      <li>Possibly fronted by Azure Front Door, Application Gateway, or another proxy in front of the Container App</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Container Apps' HTTP scaling is driven by concurrent request counts observed at the <strong>Envoy-based ingress proxy</strong> in front of each revision — not by a metric you compute externally. The two most common gaps between "traffic is happening" and "Envoy sees it":</p>
+    <ul>
+      <li><strong>Keep-alive / connection reuse skewing concurrency.</strong> If a front-end proxy multiplexes many logical requests over few long-lived connections, Envoy's concurrent request count can look much lower than actual user-facing traffic volume.</li>
+      <li><strong>Traffic bypassing ingress entirely.</strong> If something is calling the app directly via its FQDN in a way that skips the expected ingress path (for example, misconfigured internal DNS pointing somewhere unexpected), Envoy never observes those requests, so KEDA — which reads Envoy's metrics — has nothing to scale on.</li>
+    </ul>
+    <p>Check the scale rule's configured threshold against realistic concurrency for your workload — a threshold of 50 concurrent requests means little if your traffic pattern rarely holds more than 5 requests in flight at once, however high total request volume is over time.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams often assume "requests per second" from an external monitor is the same signal as the "concurrent requests" scale rule threshold. They're different measurements — a high request rate with short-lived requests can produce low concurrency, and low concurrency never crosses a threshold tuned for a different traffic shape.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Container Apps' HTTP scale rules read concurrency as observed by the Envoy sidecar/ingress in front of each revision, not application-level request counters or external monitoring tools. When the configured threshold doesn't match the actual concurrency profile of real traffic — often because of connection reuse, short request durations, or a scale rule copied from a different workload's traffic pattern — the rule technically works correctly but never fires because the condition it's watching for genuinely isn't happening.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Recalculate the threshold based on real concurrency,</strong> not request rate — use Log Analytics to look at actual in-flight request counts for your workload rather than assuming a default threshold fits.</li>
+      <li><strong>Switch scale trigger type if HTTP concurrency is the wrong signal</strong> — for workloads with many short requests rather than sustained concurrency, a custom metric (CPU, queue length) may reflect load more accurately than HTTP concurrency.</li>
+      <li><strong>Verify traffic actually routes through ingress</strong> as expected — confirm DNS and any upstream proxy configuration sends traffic to the app's public ingress endpoint rather than bypassing it.</li>
+      <li><strong>Load test against the real threshold</strong> before trusting a scale rule in production — generate sustained concurrent load matching your configured threshold and confirm a new replica actually spins up.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when setting an HTTP scale rule, base the threshold on measured concurrency from your own traffic (via Log Analytics), not a value copied from documentation examples or another team's app — traffic shape varies enough between workloads that a "reasonable default" often doesn't reflect reality.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+</div>
+</body>
+</html>

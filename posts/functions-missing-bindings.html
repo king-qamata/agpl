@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Function Fails Silently: Diagnosing Missing or Misconfigured Bindings — trace/log</title>
+<meta name="description" content="A Function that deploys cleanly but never fires, or fires and does nothing, is almost always a binding configuration problem rather than a code bug.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Function Fails Silently: Diagnosing Missing or Misconfigured Bindings — trace/log">
+<meta property="og:description" content="A Function that deploys cleanly but never fires, or fires and does nothing, is almost always a binding configuration problem rather than a code bug.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Function Fails Silently: Diagnosing Missing or Misconfigured Bindings — trace/log">
+<meta name="twitter:description" content="A Function that deploys cleanly but never fires, or fires and does nothing, is almost always a binding configuration problem rather than a code bug.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-missing-bindings.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-missing-bindings.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Function Fails Silently: Diagnosing Missing or Misconfigured Bindings</h1>
+    <div class="post-meta">
+      <span>Triggers & Bindings</span>
+      <span>function.json</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Function deploys without error and shows as present in the portal, but never triggers on the event it's supposed to respond to — a blob upload, a queue message, an Event Grid event — or triggers but the input/output binding data is null or empty inside the function body, even though the underlying resource clearly has the data.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Functions, any trigger type (Blob, Queue, Event Grid, Cosmos DB, etc.)</li>
+      <li>Recently added or modified a binding — new trigger, new input/output binding, or a change to the connection setting it references</li>
+      <li>No exception thrown; the function either doesn't fire, or fires with unexpectedly empty data</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Bindings fail in two different ways with two different signatures — identify which one you're dealing with first:</p>
+    <ul>
+      <li><strong>The function never fires at all:</strong> check the host's own startup logs (not your function's logs) for binding resolution errors. In Application Insights, look at the <code>traces</code> table for messages from the Functions host itself around startup — a bad connection string reference here prevents the trigger from ever registering, and it fails silently from the caller's perspective.</li>
+      <li><strong>The function fires but data is empty/null:</strong> this usually means the binding's path expression doesn't match the actual resource path, or the binding is pointed at the wrong container/queue/database.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-block-label">KQL — check for host-level binding errors around startup</div>
+      <pre>traces
+| where timestamp > ago(1h)
+| where message contains "Microsoft.Azure.WebJobs" or message contains "binding"
+| where severityLevel >= 2
+| order by timestamp desc</pre>
+    </div>
+
+    <ul>
+      <li><strong>Verify the connection setting name matches exactly</strong> between <code>function.json</code> (or the attribute/decorator in code) and the actual application setting name in the Function App's configuration — a typo here is the single most common cause and produces no compile-time error.</li>
+      <li><strong>Check the resource actually being referenced.</strong> For a Blob trigger, confirm the container name in the binding path matches exactly, including case sensitivity on some backends.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because there's no exception and no obvious log entry in the function's own execution logs, teams often assume the trigger source itself is broken (blob upload didn't happen, queue message was lost) and go investigate the wrong system, when the binding configuration never successfully connected in the first place.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Bindings are resolved by the Functions host at startup and per-invocation using string references — a connection setting name, a path expression, a container or queue name. None of this is type-checked or validated at deploy time; a mismatch only surfaces as a runtime failure to trigger or bind data, and that failure is logged at the host level rather than surfaced as an exception in your function code, which is why it's easy to miss.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Match connection setting names exactly</strong> between the binding definition and the Function App's Configuration settings, including correct casing.</li>
+      <li><strong>Double-check resource paths</strong> in the binding (container name, queue name, path expression) against the actual resource — copy-paste rather than retype where possible.</li>
+      <li><strong>Test bindings locally first</strong> using <code>local.settings.json</code> with the same connection string, so a binding mismatch shows up during local development instead of only in Azure.</li>
+      <li><strong>Check host-level logs specifically</strong> (the <code>traces</code> table, not just <code>requests</code>) whenever a trigger appears to not fire — this is where binding resolution failures actually get logged.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add an integration test that actually exercises the trigger end-to-end (uploads a test blob, sends a test queue message) as part of your deployment pipeline, rather than relying on a clean deploy as confirmation that bindings are correctly wired.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions</span>
+  </footer>
+</div>
+</body>
+</html>

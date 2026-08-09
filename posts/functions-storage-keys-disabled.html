@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Function App Won't Start After Disabling Storage Account Keys — trace/log</title>
+<meta name="description" content="Unlike App Service, every Function App depends on AzureWebJobsStorage at runtime. Disabling shared key access without migrating this setting first stops the host from starting.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Function App Won't Start After Disabling Storage Account Keys — trace/log">
+<meta property="og:description" content="Unlike App Service, every Function App depends on AzureWebJobsStorage at runtime. Disabling shared key access without migrating this setting first stops the host from starting.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Function App Won't Start After Disabling Storage Account Keys — trace/log">
+<meta name="twitter:description" content="Unlike App Service, every Function App depends on AzureWebJobsStorage at runtime. Disabling shared key access without migrating this setting first stops the host from starting.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-storage-keys-disabled.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-storage-keys-disabled.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Function App Won't Start After Disabling Storage Account Keys</h1>
+    <div class="post-meta">
+      <span>AzureWebJobsStorage</span>
+      <span>Managed Identity</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A previously healthy Function App stops entirely — not just individual triggers, the whole host fails to start, every trigger type included — right after a Storage Account used for <code>AzureWebJobsStorage</code> has shared key access disabled. Unlike the equivalent App Service scenario where only storage-dependent code paths break, here the app is completely down.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Functions on any plan (Consumption, Premium, Dedicated)</li>
+      <li><code>AzureWebJobsStorage</code> configured as a traditional connection string containing <code>AccountKey=</code></li>
+      <li>The referenced Storage Account recently had Shared Key Access disabled</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>This is a more severe version of the App Service storage-key scenario, because <code>AzureWebJobsStorage</code> isn't just something your application code calls — it's what the Functions <strong>host itself</strong> depends on for trigger management, checkpoints, and scale coordination. Confirm the cause quickly:</p>
+    <ul>
+      <li>Check the timing of the outage against when Shared Key Access was disabled on the storage account referenced by <code>AzureWebJobsStorage</code> — a direct match confirms the cause without further digging.</li>
+      <li>Check platform-level startup logs (via Kudu or the portal's Log Stream) for an authentication failure specifically tied to the storage connection during host initialization, rather than any individual function's logs — the host fails before any function code runs.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the failure is total and immediate, it's sometimes mistaken for a platform outage or a deployment issue. If it correlates with a storage account configuration change, it's almost certainly this — not an Azure platform problem.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Every Function App (with limited exceptions in newer container-based deployment models) depends on Azure Storage at runtime for trigger coordination, checkpoints, and scale controller metadata — this is fundamentally different from App Service, which has no inherent storage dependency unless your application code adds one. When <code>AzureWebJobsStorage</code> is still configured with a legacy account-key connection string and that storage account disables Shared Key Access, the host itself can no longer authenticate to a resource it requires simply to start — so the entire app goes down, not just storage-dependent triggers.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Enable a managed identity on the Function App</strong> if one isn't already present.</li>
+      <li><strong>Grant the identity the required RBAC roles</strong> on the storage account — typically <code>Storage Blob Data Owner</code>, <code>Storage Queue Data Contributor</code>, and <code>Storage Table Data Contributor</code>, since the runtime uses blob, queue, and potentially table storage internally.</li>
+      <li><strong>Migrate <code>AzureWebJobsStorage</code> to an identity-based connection</strong> rather than a connection string — this typically means replacing the single setting with a set of <code>AzureWebJobsStorage__*</code> settings (account name, credential type) that tell the runtime to authenticate via managed identity instead of a key. Check current Functions runtime documentation for the exact setting names for your runtime version, since this has evolved across versions.</li>
+      <li><strong>Confirm the plan supports identity-based storage</strong> — Flex Consumption and Premium plans have the most complete support; verify your specific plan and runtime version before assuming full parity.</li>
+      <li><strong>Test in a staging Function App</strong> pointed at a non-production storage account with the same Shared Key Access setting before applying this to production, given how completely the app goes down if the migration is incomplete.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> treat <code>AzureWebJobsStorage</code> migration as a required prerequisite — not an afterthought — any time a Storage Account backing a Function App is scheduled to have Shared Key Access disabled. Because the failure mode is total host failure rather than a degraded feature, this migration needs to happen before the storage change, not after.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions</span>
+  </footer>
+</div>
+</body>
+</html>
