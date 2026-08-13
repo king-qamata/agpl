@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnosing Node.js Apps That Crash Under Load on App Service Linux — trace/log</title>
+<meta name="description" content="A Node.js app that becomes unresponsive under concurrent load, without high CPU or memory, usually has a blocking synchronous call sitting on the single event loop thread.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Diagnosing Node.js Apps That Crash Under Load on App Service Linux — trace/log">
+<meta property="og:description" content="A Node.js app that becomes unresponsive under concurrent load, without high CPU or memory, usually has a blocking synchronous call sitting on the single event loop thread.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Diagnosing Node.js Apps That Crash Under Load on App Service Linux — trace/log">
+<meta name="twitter:description" content="A Node.js app that becomes unresponsive under concurrent load, without high CPU or memory, usually has a blocking synchronous call sitting on the single event loop thread.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-nodejs-event-loop.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-nodejs-event-loop.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Node.js</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Diagnosing Node.js Apps That Crash Under Load on App Service Linux</h1>
+    <div class="post-meta">
+      <span>Node.js</span>
+      <span>Event Loop</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Node.js app responds normally under light traffic, but under moderate concurrent load it becomes unresponsive — requests hang or time out — without the CPU or memory metrics in the portal showing anything alarming. Restarting temporarily resolves it, and the pattern repeats once load returns.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Node.js app on App Service Linux (or Container Apps), single process or with limited clustering</li>
+      <li>Handles concurrent requests, possibly with some synchronous computation, file I/O, or JSON parsing of large payloads in the request path</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Node.js runs JavaScript on a single-threaded event loop — any synchronous, CPU-bound operation in a request handler blocks that thread for its entire duration, during which no other request can be processed, even though CPU utilization at the container level might look unremarkable if the blocking operation itself is short but frequent.</p>
+    <ul>
+      <li><strong>Check for synchronous operations in hot paths</strong> — synchronous file reads (<code>fs.readFileSync</code>), synchronous crypto operations, or large synchronous JSON parsing/stringification are common culprits.</li>
+      <li><strong>Measure event loop lag directly</strong> rather than relying on CPU/memory graphs, which don't clearly show this pattern — Node's <code>perf_hooks</code> module or an APM tool can report event loop delay directly.</li>
+      <li><strong>Check request payload sizes</strong> — a large JSON body parsed synchronously scales badly with both payload size and concurrent request count, and is easy to miss in testing with small payloads.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-block-label">Node.js — quick event loop lag check</div>
+      <pre>const { monitorEventLoopDelay } = require('perf_hooks');
+const h = monitorEventLoopDelay();
+h.enable();
+setInterval(() => {
+  console.log('event loop delay (ms):', h.mean / 1e6);
+}, 5000);</pre>
+        </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because CPU and memory graphs often look normal, teams sometimes assume this is a network or downstream dependency issue. If the pattern is "fine under light load, unresponsive under concurrent load, no resource graph anomaly," event loop blocking should be the first thing checked, not the last.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Any synchronous, blocking operation on Node's single event loop thread prevents all other in-flight requests from making progress for its duration — this includes CPU-bound JavaScript execution, synchronous I/O calls, and heavy synchronous parsing/serialization. Under light load, blocking operations are infrequent enough not to matter; under concurrent load, they queue up and requests start timing out even though the underlying resource utilization (CPU%, memory) doesn't necessarily spike in a way that's obvious in standard infrastructure metrics.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Replace synchronous I/O with async equivalents</strong> — <code>fs.readFile</code> instead of <code>fs.readFileSync</code>, and equivalent async patterns for any other blocking I/O call in a request path.</li>
+      <li><strong>Move genuinely CPU-bound work off the main thread</strong> — use worker threads (<code>worker_threads</code>) for heavy computation, so it doesn't block request handling for other concurrent users.</li>
+      <li><strong>Stream large payloads instead of buffering and parsing synchronously</strong> where possible, particularly for large JSON bodies or file uploads.</li>
+      <li><strong>Add event loop lag monitoring as a standing metric</strong>, not just a one-time diagnostic — this makes the pattern visible in normal monitoring rather than only during an active incident.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> load test with concurrency levels that match real production traffic, not just total request volume — event loop blocking specifically requires concurrent in-flight requests to manifest, so a sequential load test can miss it entirely even at high total throughput.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Node.js</span>
+  </footer>
+</div>
+</body>
+</html>

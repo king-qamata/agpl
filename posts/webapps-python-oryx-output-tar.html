@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python on App Service: "Could Not Find output.tar.gz" After Deployment — trace/log</title>
+<meta name="description" content="This startup error means the Oryx build stage never actually completed, even though the deployment step itself reported success — here's where to look.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Python on App Service: &quot;Could Not Find output.tar.gz&quot; After Deployment — trace/log">
+<meta property="og:description" content="This startup error means the Oryx build stage never actually completed, even though the deployment step itself reported success — here's where to look.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Python on App Service: &quot;Could Not Find output.tar.gz&quot; After Deployment — trace/log">
+<meta name="twitter:description" content="This startup error means the Oryx build stage never actually completed, even though the deployment step itself reported success — here's where to look.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-python-oryx-output-tar.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-python-oryx-output-tar.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Python</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Python on App Service: "Could Not Find output.tar.gz" After Deployment</h1>
+    <div class="post-meta">
+      <span>Python</span>
+      <span>Oryx</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>The app fails to start after what looked like a successful deployment, with an error referencing a missing <code>output.tar.gz</code> file. The deployment step in CI/CD reported success, which makes this confusing — the failure only shows up at container startup, not during deployment.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Python application on App Service Linux using Oryx build (<code>SCM_DO_BUILD_DURING_DEPLOYMENT=true</code>)</li>
+      <li>An <code>oryx-manifest.toml</code> file is present, but <code>output.tar.gz</code> is not</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>The presence of <code>oryx-manifest.toml</code> without the accompanying <code>output.tar.gz</code> is the actual signal here: Oryx's Python images look for this compressed output at startup, and if the manifest exists but the archive doesn't, the build stage was started but never completed successfully — even though your pipeline's deployment step may have exited with a success code for a different reason (the upload succeeded; the build behind it did not).</p>
+    <ul>
+      <li>Check whether the app was left in a mid-deployment state — stop the App Service, wait for any in-flight deployment operation to fully complete, then restart and check again before assuming this is a persistent build failure.</li>
+      <li>If it persists, go back to the actual Oryx build logs (not just the pipeline's summary output) and look for why the build stage failed or was interrupted.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the pipeline reported success, teams sometimes assume the app itself is broken and start debugging application code. The actual failure is upstream, in the build stage — application code was never the problem here.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Oryx's Python deployment model produces a compressed <code>output.tar.gz</code> as the final artifact of a successful build, alongside a manifest file describing what was built. If the build process is interrupted — for example, by a deployment operation overlapping with another one, or a build stage that errors out partway through — the manifest can be written before the failure occurs, while the final compressed artifact never gets created. The app then starts up expecting an artifact that doesn't exist.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Let any in-flight deployment fully complete</strong> before redeploying — stop the app, wait, then check whether the issue resolves on its own once the interrupted operation finishes.</li>
+      <li><strong>If it doesn't resolve,</strong> review the actual Oryx build log for the failure, not just your pipeline's top-level status — the build log will show where the process actually stopped.</li>
+      <li><strong>Avoid triggering overlapping deployments</strong> to the same app — this is the same underlying Kudu concurrency constraint covered in <a href="webapps-http-409-deployment.html" style="color:inherit;text-decoration:underline;">this site's HTTP 409 post</a>, and an interrupted build is one of the ways that conflict can manifest.</li>
+      <li><strong>Redeploy cleanly</strong> once the cause is addressed — a fresh, uninterrupted deployment should regenerate both the manifest and the archive correctly.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> apply the same concurrency controls in your pipeline recommended for the HTTP 409 scenario — serializing deployments avoids this specific failure mode as well, since it stems from the same root cause of overlapping deployment operations.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Python</span>
+  </footer>
+</div>
+</body>
+</html>

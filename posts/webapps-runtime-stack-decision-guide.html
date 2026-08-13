@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Choosing an App Service Runtime Stack: .NET vs Java vs Python vs Node.js — trace/log</title>
+<meta name="description" content="A decision guide for App Service runtime stacks — build model, deployment behavior, and the diagnostic tooling each language actually gives you in production.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Choosing an App Service Runtime Stack: .NET vs Java vs Python vs Node.js — trace/log">
+<meta property="og:description" content="A decision guide for App Service runtime stacks — build model, deployment behavior, and the diagnostic tooling each language actually gives you in production.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Choosing an App Service Runtime Stack: .NET vs Java vs Python vs Node.js — trace/log">
+<meta name="twitter:description" content="A decision guide for App Service runtime stacks — build model, deployment behavior, and the diagnostic tooling each language actually gives you in production.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-runtime-stack-decision-guide.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-runtime-stack-decision-guide.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<style>
+  .compare-table{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;}
+  .compare-table th{
+    font-family:var(--mono);font-size:11px;color:var(--azure);
+    text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);
+    text-transform:uppercase;letter-spacing:0.04em;
+  }
+  .compare-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);}
+  .compare-table tr:last-child td{border-bottom:none;}
+  .compare-table td:first-child{color:var(--text);font-weight:500;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Choosing an App Service Runtime Stack: .NET vs Java vs Python vs Node.js</h1>
+    <div class="post-meta">
+      <span>Architecture</span>
+      <span>Decision Guide</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>All four run on App Service Linux with broadly comparable hosting features, but they differ meaningfully in build model and the depth of diagnostic tooling available when something goes wrong in production — which matters more once an app is live than any framework preference does on day one.</p>
+
+    <h2><span class="tag tut">01</span>Build and deployment model</h2>
+    <p><strong>Java is not built by Oryx</strong> — Java applications on App Service Linux are deployed as pre-built JAR or WAR artifacts, so your CI pipeline owns the entire build step; there's no equivalent of Oryx auto-detecting and building your source.</p>
+    <p><strong>.NET, Python, and Node.js can all be built by Oryx</strong> when deploying via Local Git, ZipDeploy with build enabled, or similar — Oryx detects the stack and runs the appropriate build (restore/publish for .NET, pip install into a virtual environment for Python, npm install for Node.js). All three can also be pre-built and deployed as finished artifacts instead, bypassing Oryx entirely.</p>
+
+    <h2><span class="tag tut">02</span>Where each one tends to break</h2>
+    <table class="compare-table">
+      <tr><th>Stack</th><th>Common failure mode</th><th>Covered on this site</th></tr>
+      <tr><td>Java</td><td>Classpath/dependency version conflicts (NoSuchMethodError), Tomcat WAR deployment issues</td><td><a href="webapps-java-nosuchmethoderror.html" style="color:inherit;">NoSuchMethodError post</a></td></tr>
+      <tr><td>.NET</td><td>Generic error pages hiding real exceptions; CPU/perf issues need EventPipe tracing</td><td><a href="webapps-dotnet-trace-tutorial.html" style="color:inherit;">dotnet-trace tutorial</a></td></tr>
+      <tr><td>Python</td><td>Interrupted Oryx builds leaving an incomplete deployment artifact</td><td><a href="webapps-python-oryx-output-tar.html" style="color:inherit;">output.tar.gz post</a></td></tr>
+      <tr><td>Node.js</td><td>Native (C++ binding) dependencies failing to compile in the Oryx build context</td><td><a href="webapps-nodejs-node-gyp.html" style="color:inherit;">node-gyp post</a></td></tr>
+    </table>
+
+    <h2><span class="tag tut">03</span>Diagnostic tooling depth</h2>
+    <p><strong>.NET</strong> has the most direct production profiling story via <code>dotnet-trace</code>, reading from the runtime's built-in EventPipe — no attached debugger required, works over SSH into the live container.</p>
+    <p><strong>Java</strong> has a mature but more manual diagnostic path — thread dumps, heap dumps, and tools like async-profiler installed into the container, generally requiring more setup than .NET's EventPipe-based approach.</p>
+    <p><strong>Python and Node.js</strong> lean more heavily on application-level logging and Application Insights instrumentation for production diagnosis, since neither has as direct a low-level runtime tracing story built into the platform tooling the way .NET does.</p>
+
+    <h2><span class="tag tut">04</span>Practical guidance</h2>
+    <ul>
+      <li><strong>If your team already knows a stack well,</strong> that familiarity matters more than any difference covered here — all four are well-supported, production-grade choices on App Service.</li>
+      <li><strong>If you're choosing fresh and production debugging speed matters most,</strong> .NET's tracing tooling gives the shortest path from "something's slow" to "here's the method consuming CPU."</li>
+      <li><strong>If your dependency tree includes native modules,</strong> budget time for the Node.js native-build caveat, or plan to build outside Oryx from the start rather than discovering it during a deployment.</li>
+      <li><strong>If deploying Java,</strong> plan your CI pipeline to own the full build — there's no Oryx auto-build fallback to lean on if the pipeline step is incomplete.</li>
+    </ul>
+
+    <div class="callout tut"><strong>The practical test:</strong> none of these differences are usually large enough to override an existing team's expertise — but knowing where each stack tends to break, and what tooling exists when it does, is worth knowing before you're debugging a production incident in a language nobody on the team has profiled before.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

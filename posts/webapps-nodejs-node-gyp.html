@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node.js Deployment Fails: node-gyp and Native Module Build Errors on Oryx — trace/log</title>
+<meta name="description" content="A native npm dependency requiring node-gyp can fail to build under Oryx because the compilation step needs Python, which isn't available in that build context.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Node.js Deployment Fails: node-gyp and Native Module Build Errors on Oryx — trace/log">
+<meta property="og:description" content="A native npm dependency requiring node-gyp can fail to build under Oryx because the compilation step needs Python, which isn't available in that build context.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Node.js Deployment Fails: node-gyp and Native Module Build Errors on Oryx — trace/log">
+<meta name="twitter:description" content="A native npm dependency requiring node-gyp can fail to build under Oryx because the compilation step needs Python, which isn't available in that build context.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-nodejs-node-gyp.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-nodejs-node-gyp.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Node.js</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Node.js Deployment Fails: node-gyp and Native Module Build Errors on Oryx</h1>
+    <div class="post-meta">
+      <span>Node.js</span>
+      <span>Oryx</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>Deployment fails during the build step with an error surfacing from <code>node-gyp</code> or a native dependency's install script, even though <code>npm install</code> works fine locally. The failure is specific to deployment via Oryx (ZipDeploy with build enabled, Local Git, or similar) rather than a pre-built artifact deployment.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Node.js application on App Service Linux with a dependency that includes native C++ bindings (common in image processing, native crypto, or certain database driver packages)</li>
+      <li>Deploying via a method that triggers Oryx build (<code>SCM_DO_BUILD_DURING_DEPLOYMENT=true</code>, or default-enabled Local Git/Bitbucket)</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Oryx pulls the Node.js runtime based on the preselected stack version for the build. If a dependency's install script requires <code>node-gyp</code> to compile a native binding, that compilation step itself needs Python available in the build environment — and depending on the exact build context, Python may not be present or correctly configured, causing the native build step to fail even though the rest of the npm install succeeds.</p>
+    <ul>
+      <li>Check the build log for the specific package failing — it's typically a native dependency, not your own application code.</li>
+      <li>Confirm whether the same install succeeds in a clean local environment matching the target Node version, to rule out an unrelated dependency issue.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because "npm install works fine locally," this sometimes gets treated as an Oryx platform bug. The build environments genuinely differ — local development machines typically have a full native build toolchain and Python already available, which the Oryx build container may not provide in the same way.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Native npm modules aren't just JavaScript — their install script invokes <code>node-gyp</code>, which compiles C/C++ source using Python as part of the toolchain. Oryx's build environment is optimized for typical Node.js application builds and may not include everything a native compilation step needs, so a dependency that "just works" with a full local toolchain can fail specifically inside the Oryx build context.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Build locally and deploy the pre-built artifact</strong> instead of relying on Oryx to build it — run <code>npm install</code> and any build steps locally (or in a CI environment you control with the full toolchain), then ZipDeploy the result including <code>node_modules</code>.</li>
+      <li><strong>If you need Oryx to build it,</strong> check whether the native dependency has a prebuilt binary distribution option that avoids compilation entirely — many popular native packages offer this as an alternative to compiling from source.</li>
+      <li><strong>Consider whether the native dependency is actually necessary</strong> — a pure-JavaScript alternative avoids this entire class of problem if one exists with acceptable performance for your use case.</li>
+      <li><strong>For unrelated `npm run build` compile failures</strong> (React/Angular/Vue/Next.js builds failing under Oryx), the same "build locally, deploy the output" approach applies — identify the specific failing library, and if it's a memory constraint rather than a missing toolchain, increase Node's <code>--max-old-space-size</code> or scale up the build environment.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> for any application with native dependencies, prefer building in a CI environment you control (GitHub Actions, Azure Pipelines) with an explicit, reproducible toolchain, and deploy the finished artifact — this removes Oryx's build environment as a variable entirely rather than hoping it matches what a native module needs.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Node.js</span>
+  </footer>
+</div>
+</body>
+</html>
