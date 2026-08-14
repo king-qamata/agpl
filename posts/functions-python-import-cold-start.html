@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Python Functions: Diagnosing Slow Cold Starts from Heavy Package Imports — trace/log</title>
+<meta name="description" content="A Python Function with a large cold start time often has nothing to do with Azure at all — heavy top-level imports like pandas or numpy run in full on every cold instance.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Python Functions: Diagnosing Slow Cold Starts from Heavy Package Imports — trace/log">
+<meta property="og:description" content="A Python Function with a large cold start time often has nothing to do with Azure at all — heavy top-level imports like pandas or numpy run in full on every cold instance.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Python Functions: Diagnosing Slow Cold Starts from Heavy Package Imports — trace/log">
+<meta name="twitter:description" content="A Python Function with a large cold start time often has nothing to do with Azure at all — heavy top-level imports like pandas or numpy run in full on every cold instance.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-python-import-cold-start.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-python-import-cold-start.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Python</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Python Functions: Diagnosing Slow Cold Starts from Heavy Package Imports</h1>
+    <div class="post-meta">
+      <span>Python</span>
+      <span>Cold Start</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>Cold start time for a Python Function is significantly worse than a comparable Node.js or C# function doing similar work — sometimes several seconds worse, well beyond the baseline cold start behavior covered in the <a href="functions-cold-starts.html" style="color:inherit;text-decoration:underline;">general cold start post</a> on this site.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Python on Azure Functions, any plan</li>
+      <li>Function file imports one or more data science / ML libraries (pandas, numpy, scikit-learn, or similar) at module level</li>
+      <li>Cold start regression is consistent, not intermittent</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Check what runs at module import time versus inside the function handler itself. Python executes all top-level module code — including every <code>import</code> statement — before your function handler is even reachable, and some scientific/data libraries have substantial import-time initialization cost that has nothing to do with your actual function logic.</p>
+    <ul>
+      <li>Time the import statements in isolation locally (<code>python -X importtime your_module.py</code>) to see which specific import is expensive.</li>
+      <li>Compare cold start duration against a minimal function with no heavy imports, to establish how much of the delay is import overhead versus platform-level cold start behavior.</li>
+    </ul>
+    <div class="code-block">
+      <div class="code-block-label">bash — profile import time locally</div>
+      <pre>python -X importtime -c "import pandas" 2>&1 | tail -20</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a slow Python cold start is often reported simply as "Python is slower than Node/C# on Azure Functions" without investigating further. While there's some baseline difference between runtimes, a specific heavy import is usually the dominant, fixable factor — not an inherent Python-vs-other-language penalty.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>When a Python Function App cold starts, the entire module — including all top-level imports — is loaded and executed before the first invocation can be served. Libraries like pandas or numpy do meaningful work at import time (loading native extensions, building internal registries), and that cost is paid on every cold start, not just the first time ever. If a function only occasionally needs a heavy library, or needs only a small piece of it, importing it unconditionally at module level means paying that cost on every cold instance regardless of whether that code path is actually used.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Move heavy imports inside the function body</strong> if they're only needed for specific code paths, so the cost is paid only when that path actually executes rather than on every cold start.</li>
+      <li><strong>Audit whether the full library is actually needed</strong> — sometimes a lighter alternative or a more targeted import (e.g. a specific submodule) avoids pulling in the library's full initialization cost.</li>
+      <li><strong>Use a Premium plan with always-ready instances</strong> if the workload genuinely requires heavy libraries at cold start and latency matters — this sidesteps the import cost being customer-visible rather than trying to eliminate it entirely.</li>
+      <li><strong>Consider whether the workload fits Functions at all</strong> — a function that's mostly waiting on heavy library initialization on every cold start may be better suited to an always-on hosting model (App Service, Container Apps with a minimum replica) than Consumption-plan Functions.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> run <code>python -X importtime</code> against new dependencies before adding them to a Function App, especially anything in the data science ecosystem — catching an expensive import during code review is much cheaper than discovering it as a cold start regression in production.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Python</span>
+  </footer>
+</div>
+</body>
+</html>

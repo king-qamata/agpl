@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blob Trigger Taking Minutes to Fire: Switching to Event Grid-Based Triggering — trace/log</title>
+<meta name="description" content="The default Blob Storage trigger polls the container rather than reacting instantly. On Consumption plans that polling interval can add real, sometimes multi-minute, latency.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Blob Trigger Taking Minutes to Fire: Switching to Event Grid-Based Triggering — trace/log">
+<meta property="og:description" content="The default Blob Storage trigger polls the container rather than reacting instantly. On Consumption plans that polling interval can add real, sometimes multi-minute, latency.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Blob Trigger Taking Minutes to Fire: Switching to Event Grid-Based Triggering — trace/log">
+<meta name="twitter:description" content="The default Blob Storage trigger polls the container rather than reacting instantly. On Consumption plans that polling interval can add real, sometimes multi-minute, latency.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-blob-trigger-latency.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-blob-trigger-latency.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Blob Trigger Taking Minutes to Fire: Switching to Event Grid-Based Triggering</h1>
+    <div class="post-meta">
+      <span>Blob Trigger</span>
+      <span>Event Grid</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A blob-triggered Function works correctly — it eventually processes every blob — but there's a noticeable, sometimes multi-minute delay between a blob landing in the container and the function actually firing. This is often first noticed under low-traffic conditions, where the delay is most visible, and can look like an intermittent or environment-specific problem.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Functions with a standard Blob Storage trigger (the default, polling-based version)</li>
+      <li>Consumption or Premium plan — the polling interval is a bigger factor at lower/idle scale</li>
+      <li>No errors in logs; the function simply runs later than expected</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Confirm this is a triggering-latency issue and not a processing-latency issue first: check the timestamp of the blob's creation against the function's actual invocation start time in Application Insights. If there's a meaningful gap between the two — and the function itself runs quickly once it starts — the delay is happening before the function is even invoked, which points at the trigger mechanism itself rather than your code.</p>
+    <div class="code-block">
+      <div class="code-block-label">KQL — compare blob creation to function invocation time</div>
+      <pre>requests
+| where timestamp > ago(2h)
+| where name == "YourBlobTriggerFunction"
+| project timestamp, duration
+| order by timestamp desc</pre>
+    </div>
+    <p>Cross-reference against your storage account's own logs or activity for the actual blob creation timestamp. A gap of anywhere from under a minute up to several minutes is consistent with the default polling-based trigger, not a bug.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> intermittent, unexplained delay is often chased as a cold start issue or an App Insights sampling artifact. If the function itself executes quickly once invoked, and the delay is specifically between blob creation and invocation, that's the trigger's own polling behavior — a different problem from cold starts, and not fixed by any of the cold start mitigations covered elsewhere on this site.</p></div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>The original Blob Storage trigger design polls the container for changes rather than reacting to them immediately — it periodically scans for new or modified blobs. This polling interval is what introduces latency between a blob actually appearing and the function noticing it, and that latency is inherent to how the polling trigger works, not something tunable away to zero.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <p>Newer versions of the Storage extension (5.x and later) support an <strong>Event Grid-based</strong> Blob trigger instead — the container is subscribed to via an Event Grid event subscription, and the function is invoked as a direct reaction to the blob-created event rather than being discovered on the next poll cycle. This removes the polling delay essentially entirely.</p>
+    <ul>
+      <li><strong>Upgrade to Storage extension 5.x+</strong> (via the appropriate NuGet/npm/pip package or extension bundle version) if not already on it.</li>
+      <li><strong>Change the trigger's <code>source</code> to <code>EventGrid</code></strong> in the binding definition, instead of the default polling source.</li>
+      <li><strong>Create an Event Grid event subscription</strong> on the storage account, targeting the function's blob extension webhook endpoint, filtered to the relevant container and blob-created events.</li>
+      <li><strong>Note the Flex Consumption plan requirement:</strong> if you're on Flex Consumption specifically, this isn't optional — that plan only supports the Event Grid-based trigger, not the legacy polling version, so this migration may be required rather than just an optimization.</li>
+    </ul>
+    <p>Full setup steps are in the <a href="functions-event-grid-blob-trigger-tutorial.html" style="color:inherit;text-decoration:underline;">Event Grid-based blob trigger tutorial</a> on this site.</p>
+
+    <div class="callout"><strong>Prevention tip:</strong> for any new blob-triggered function where latency matters, default to the Event Grid-based source from the start rather than the polling version — there's little reason to accept polling latency now that the event-based option is broadly available.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions</span>
+  </footer>
+</div>
+</body>
+</html>

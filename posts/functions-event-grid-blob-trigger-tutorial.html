@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setting Up an Event Grid-Based Blob Trigger, Start to Finish — trace/log</title>
+<meta name="description" content="Step-by-step: switch a Blob Storage trigger from container polling to an Event Grid event subscription, for near-instant triggering instead of polling delay.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Setting Up an Event Grid-Based Blob Trigger, Start to Finish — trace/log">
+<meta property="og:description" content="Step-by-step: switch a Blob Storage trigger from container polling to an Event Grid event subscription, for near-instant triggering instead of polling delay.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Setting Up an Event Grid-Based Blob Trigger, Start to Finish — trace/log">
+<meta name="twitter:description" content="Step-by-step: switch a Blob Storage trigger from container polling to an Event Grid event subscription, for near-instant triggering instead of polling delay.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-event-grid-blob-trigger-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-event-grid-blob-trigger-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Setting Up an Event Grid-Based Blob Trigger, Start to Finish</h1>
+    <div class="post-meta">
+      <span>Intermediate</span>
+      <span>Event Grid</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>This is the fix referenced in the <a href="functions-blob-trigger-latency.html" style="color:inherit;text-decoration:underline;">blob trigger latency troubleshooting post</a> on this site — moving a Blob trigger from polling to an Event Grid event subscription, so the function fires the moment a blob lands rather than on the next poll cycle.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An existing blob-triggered Function (see the <a href="functions-blob-trigger-tutorial.html" style="color:inherit;text-decoration:underline;">Blob trigger walkthrough</a> on this site if you're starting from scratch)</li>
+        <li>A general-purpose v2 Storage Account — Event Grid subscriptions on Blob Storage require this account kind specifically</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Upgrade the Storage extension</h4>
+        <p>The Event Grid-based source requires Storage extension version 5.x or later. Update your extension bundle in <code>host.json</code> to a version range that includes it.</p>
+        <div class="code-block">
+          <div class="code-block-label">host.json</div>
+          <pre>{
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.0.0, 5.0.0)"
+  }
+}</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Change the trigger source</h4>
+        <p>Update the binding to specify <code>EventGrid</code> as the source instead of the default polling behavior.</p>
+        <div class="code-block">
+          <div class="code-block-label">function.json</div>
+          <pre>{
+  "bindings": [
+    {
+      "name": "myBlob",
+      "type": "blobTrigger",
+      "direction": "in",
+      "path": "uploads/{name}",
+      "source": "EventGrid",
+      "connection": "AzureWebJobsStorage"
+    }
+  ]
+}</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Deploy the updated function</h4>
+        <p>Publish the change to your Function App. At this point the trigger definition is updated, but no events will arrive yet — the Event Grid subscription itself doesn't exist until the next step.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Get the blob extension webhook URL and key</h4>
+        <p>In the portal, under your Function App → <strong>App keys</strong>, copy the <code>blobs_extension</code> system key. Build the webhook endpoint URL using this pattern:</p>
+        <div class="code-block">
+          <div class="code-block-label">Endpoint URL pattern</div>
+          <pre>https://&lt;function-app-name&gt;.azurewebsites.net/runtime/webhooks/blobs?functionName=Host.Functions.&lt;FunctionName&gt;&amp;code=&lt;blobs_extension_key&gt;</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Create the Event Grid event subscription</h4>
+        <p>On the Storage Account, go to <strong>Events → + Event Subscription</strong>. Set Endpoint Type to <strong>Web Hook</strong>, paste the URL from the previous step, and filter Event Types to <strong>Blob Created</strong>.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Scope the subscription with filters</h4>
+        <p>Under the Filters tab, enable subject filtering and scope it to the specific container (and optionally a blob name prefix/suffix) you want to trigger on — this avoids firing on unrelated container activity.</p>
+        <div class="code-block">
+          <div class="code-block-label">Example filter</div>
+          <pre>Subject Begins With: /blobServices/default/containers/uploads/blobs/
+Subject Ends With:   .csv</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Verify end to end</h4>
+        <p>Upload a test blob and confirm the function fires within seconds rather than minutes. Check the storage account's <strong>Events → Event Subscriptions</strong> page to confirm delivery, and the function's own invocation logs to confirm execution.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> a blob trigger that fires on an actual event rather than a polling cycle — the fix for the latency issue covered in the <a href="functions-blob-trigger-latency.html" style="color:inherit;text-decoration:underline;">companion troubleshooting post</a>, and required outright if you're on the Flex Consumption plan.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>
