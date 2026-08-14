@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Container Crash with Exit Code 132 (SIGILL): Diagnosing Invalid CPU Instructions — trace/log</title>
+<meta name="description" content="Exit code 132 on Web App for Containers is SIGILL, not an app bug. How to diagnose CPU instruction set mismatches in container images.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Container Crash with Exit Code 132 (SIGILL): Diagnosing Invalid CPU Instructions — trace/log">
+<meta property="og:description" content="Exit code 132 on Web App for Containers is SIGILL, not an app bug. How to diagnose CPU instruction set mismatches in container images.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Container Crash with Exit Code 132 (SIGILL): Diagnosing Invalid CPU Instructions — trace/log">
+<meta name="twitter:description" content="Exit code 132 on Web App for Containers is SIGILL, not an app bug. How to diagnose CPU instruction set mismatches in container images.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-exit-code-132.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-exit-code-132.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Container Crash with Exit Code 132 (SIGILL): Diagnosing Invalid CPU Instructions</h1>
+    <div class="post-meta">
+      <span>Web App for Containers</span>
+      <span>App Service Linux</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A custom container deployed to Web App for Containers (or App Service Linux) crashes immediately on startup, or shortly after handling its first request. The container logs show the process terminating with <strong>exit code 132</strong>, with no application-level stack trace or exception — the process simply disappears.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Web App for Containers running a custom Docker image</li>
+      <li>Image built or pulled on a different CPU architecture or host than the one it now runs on</li>
+      <li>Often follows a base image update, a move to a "blessed"/Microsoft-maintained base image, or a build pipeline running on different hardware than production</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Exit code 132 corresponds to signal 4 (<code>128 + 4 = 132</code>), which is <strong>SIGILL — Illegal Instruction</strong>. This is a CPU-level fault, not an application bug: the process attempted to execute a machine instruction that the underlying processor doesn't support.</p>
+
+    <ul>
+      <li>Check the container platform logs (not just app logs) for the exit code and signal name.</li>
+      <li>Confirm what CPU architecture and instruction set the image was built for versus what the App Service host actually provides — this mismatch is the most common cause.</li>
+      <li>If the image was recently rebuilt on a newer machine (e.g. one supporting AVX-512 or other extended instruction sets), that's the first thing to suspect.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because there's no application stack trace, teams often assume the app crashed due to a code bug and start bisecting recent code changes. SIGILL happens below the application layer entirely — the app never gets far enough to log anything meaningful.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>The container image (or a native dependency/binary inside it, such as a compiled library) was compiled with instructions targeting a newer or different CPU microarchitecture than what's available on the App Service compute powering the container. When the CPU hits an unsupported instruction, the kernel delivers SIGILL and the process is killed immediately — this is a hardware compatibility issue baked into the image, not a runtime configuration problem.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Rebuild on a compatible target:</strong> use a build environment that targets a broadly compatible instruction set (e.g. build with generic <code>x86-64</code> targeting rather than <code>-march=native</code> or similar CPU-specific compiler flags).</li>
+      <li><strong>Pin your base image:</strong> use a specific, known-good tag for your base image rather than <code>latest</code>, so a base image update doesn't silently change the compiled binaries underneath you.</li>
+      <li><strong>Check native dependencies:</strong> if the crash is in a compiled library (e.g. a Python or Node native extension), rebuild or replace that dependency with a build compatible with the hosting environment.</li>
+      <li><strong>Verify locally against matching hardware:</strong> where possible, test the image in an environment that matches production CPU capabilities before pushing to the registry.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add an explicit CPU/architecture compatibility check to your CI build pipeline, and avoid CPU-specific optimization flags in Dockerfiles meant for cloud deployment — portability should generally win over marginal performance gains from CPU-specific instructions.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

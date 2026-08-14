@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java on App Service: Diagnosing java.lang.NoSuchMethodError — trace/log</title>
+<meta name="description" content="NoSuchMethodError on App Service Linux is almost always a classpath conflict between build time and runtime, not a code bug — here's how to isolate the duplicate dependency.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Java on App Service: Diagnosing java.lang.NoSuchMethodError — trace/log">
+<meta property="og:description" content="NoSuchMethodError on App Service Linux is almost always a classpath conflict between build time and runtime, not a code bug — here's how to isolate the duplicate dependency.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Java on App Service: Diagnosing java.lang.NoSuchMethodError — trace/log">
+<meta name="twitter:description" content="NoSuchMethodError on App Service Linux is almost always a classpath conflict between build time and runtime, not a code bug — here's how to isolate the duplicate dependency.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-java-nosuchmethoderror.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-java-nosuchmethoderror.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Java</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Java on App Service: Diagnosing java.lang.NoSuchMethodError</h1>
+    <div class="post-meta">
+      <span>Java</span>
+      <span>Classpath Conflicts</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An application throws <code>java.lang.NoSuchMethodError: com.some.package.ClassNameThatIsFailing</code> either on startup or when a specific code path is invoked, with no preceding code change — often right after a routine restart, a scaling event, or a platform-triggered instance move that simply started the same container fresh.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Java application on App Service Linux (any supported version/framework)</li>
+      <li>No application code or configuration change immediately preceding the error</li>
+      <li>Error correlates with a restart, scale event, or instance movement rather than a deployment</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>The critical clue is in the stack trace: if the failing class or method clearly belongs to an external library rather than your own application code, that's a strong signal this is a classpath/dependency version conflict, not a genuine application bug — a compile-time-only error (calling a private or nonexistent method you wrote yourself) would have failed the build, not passed it and failed only at runtime.</p>
+    <ul>
+      <li><strong>Identify whether the failing method belongs to your code or a dependency</strong> from the stack trace's package name.</li>
+      <li><strong>Check for duplicate versions of the same JAR</strong> on the classpath — this is the single most common cause. Multiple versions of the same library (pulled in transitively by different dependencies) can cause the JVM's ClassLoader to resolve a different version at runtime than what was present at build/compile time.</li>
+      <li><strong>For Maven projects,</strong> run the <code>duplicate-finder-maven-plugin</code> against your build — if it surfaces classes, dependencies, or method names matching what's in the failing stack trace, that confirms the cause directly.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the error appears "out of nowhere" after a restart with no code change, teams sometimes suspect platform instability. In reality, a restart is exactly when this surfaces — the classloader resolves the classpath fresh on every startup, so a latent duplicate-dependency conflict that happened to resolve favorably before can resolve differently on the next start.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>When multiple versions of the same library end up on the classpath — commonly through transitive dependencies pulled in by different direct dependencies — the JVM's ClassLoader may load a different version of a class at runtime than the one present when the code was compiled. If that runtime version is missing a method the compiled bytecode expects, the result is <code>NoSuchMethodError</code>: valid at compile time against one version, broken at runtime against another.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Run the duplicate-finder plugin</strong> (or your build tool's equivalent) to identify exactly which library has conflicting versions on the classpath.</li>
+      <li><strong>Pin the dependency version explicitly</strong> in your build file (Maven's dependency management, Gradle's resolution strategy) rather than letting transitive resolution pick inconsistently.</li>
+      <li><strong>Exclude the older transitive version</strong> from whichever dependency is pulling it in, if a newer version elsewhere in the tree is the one you actually want.</li>
+      <li><strong>Rebuild and redeploy</strong> — this is a build-artifact problem, so simply restarting the existing deployment won't fix it; the classpath itself needs to change.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add the duplicate-finder plugin (or equivalent) as a standing step in CI, failing the build on classpath conflicts rather than discovering them in production after a restart happens to resolve the classpath unfavorably.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Java</span>
+  </footer>
+</div>
+</body>
+</html>

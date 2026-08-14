@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Container Apps — trace/log</title>
+<meta name="description" content="Azure Container Apps troubleshooting and tutorials: Dapr sidecars, revision failures, environment deletion blockers, and base image mismatches.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Container Apps — trace/log">
+<meta property="og:description" content="Azure Container Apps troubleshooting and tutorials: Dapr sidecars, revision failures, environment deletion blockers, and base image mismatches.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Container Apps — trace/log">
+<meta name="twitter:description" content="Azure Container Apps troubleshooting and tutorials: Dapr sidecars, revision failures, environment deletion blockers, and base image mismatches.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/domains/container-apps.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/domains/container-apps.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="web-apps.html">Web Apps</a>
+      <a href="functions.html">Functions</a>
+      <a href="container-apps.html" class="active">Container Apps</a>
+      <a href="static-web-apps.html">Static Web Apps</a>
+      <a href="security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span><span class="current">Container Apps</span>
+  </div>
+
+  <div class="page-intro">
+    <span class="page-tag">DOMAIN 03 · ACA & DAPR</span>
+    <h1>Container Apps</h1>
+    <p>Container basics and ACR, Kubernetes vs. Azure Container Apps, ingress and Dapr service-to-service communication, and scaling diagnostics via the Envoy proxy.</p>
+  </div>
+
+  <div class="section-label"><span class="idx">01</span> Troubleshooting <span class="count">(4)</span></div>
+  <div class="queue">
+    <a href="../posts/containerapps-env-wont-delete.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Container App Environment Won't Delete: Two Common Blockers</div>
+        <div class="ticket-meta">6 min read · Environments · Resource Locks</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/containerapps-glibc-not-found.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">"GLIBC Version Not Found": Diagnosing Base Image Mismatches</div>
+        <div class="ticket-meta">6 min read · Base Images · Alpine vs Debian</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/containerapps-dapr-sidecar-checklist.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Revision Stuck in Provisioning: a Dapr Sidecar Checklist</div>
+        <div class="ticket-meta">7 min read · Dapr · Revisions</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/containerapps-envoy-scaling.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Scaling Rules Not Triggering: Debugging the Envoy Proxy Layer</div>
+        <div class="ticket-meta">7 min read · Scaling · KEDA</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <div class="section-label"><span class="idx">02</span> Tutorials <span class="count">(4)</span></div>
+  <div class="queue">
+    <a href="../posts/containerapps-kql-primer-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Reading ACA Logs in Log Analytics: a KQL Primer</div>
+        <div class="ticket-meta">6 min read · Step-by-step · Beginner</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/containerapps-aci-vs-webapp-vs-aca.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">ACI vs Web App for Containers vs ACA: Choosing the Right Compute Service</div>
+        <div class="ticket-meta">8 min read · Architecture · Decision Guide</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/containerapps-managed-identity-private-endpoint.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Connecting Container Apps to Storage with Managed Identity and Private Endpoints</div>
+        <div class="ticket-meta">8 min read · Zero Trust · Managed Identity</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/containerapps-capacity-planning-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Capacity Planning for Container Apps: How Replicas Actually Consume Resources</div>
+        <div class="ticket-meta">7 min read · Step-by-step · Intermediate</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+
+</div>
+</body>
+</html>

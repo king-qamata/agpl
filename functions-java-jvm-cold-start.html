@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java Functions: Diagnosing JVM Warm-Up Time on Cold Start — trace/log</title>
+<meta name="description" content="Java Functions cold starts are dominated by JVM startup and class loading, not application code — and that changes which fixes actually move the needle.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Java Functions: Diagnosing JVM Warm-Up Time on Cold Start — trace/log">
+<meta property="og:description" content="Java Functions cold starts are dominated by JVM startup and class loading, not application code — and that changes which fixes actually move the needle.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Java Functions: Diagnosing JVM Warm-Up Time on Cold Start — trace/log">
+<meta name="twitter:description" content="Java Functions cold starts are dominated by JVM startup and class loading, not application code — and that changes which fixes actually move the needle.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-java-jvm-cold-start.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-java-jvm-cold-start.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Java</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Java Functions: Diagnosing JVM Warm-Up Time on Cold Start</h1>
+    <div class="post-meta">
+      <span>Java</span>
+      <span>Cold Start</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>Java Functions consistently show the worst cold start times among the language runtimes on a given plan — often multiple seconds — even for a function with minimal application logic and few dependencies. This is a baseline characteristic teams notice when comparing against Node.js or Python functions doing similar work.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Java on Azure Functions, Consumption or Premium plan</li>
+      <li>Standard JVM (not GraalVM native image)</li>
+      <li>Function has few or no unusually heavy dependencies — the slowness is present even in a minimal function</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Unlike the Python and Node.js cold start posts on this site, where a specific heavy import is usually the fixable cause, Java's baseline cold start cost is dominated by the JVM itself starting up and loading classes — this is present even in a genuinely minimal function, which is the key diagnostic signal that distinguishes this from an application-level problem.</p>
+    <ul>
+      <li>Test with the simplest possible function (a single HTTP trigger, no dependencies) to establish the JVM's baseline startup cost on your current plan and configuration.</li>
+      <li>Compare that baseline against your actual function's cold start time — if the gap is small, the JVM startup itself is the dominant cost and application-level fixes will have limited impact.</li>
+      <li>Check whether class loading is a larger factor by reviewing how many classes/dependencies get loaded during initialization — a large dependency tree adds to JVM startup on top of the baseline.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams sometimes try the same fixes that work for Python or Node.js (moving imports, lazy loading) and see limited improvement, then conclude nothing can be done. Since JVM startup itself is the larger fixed cost for Java specifically, the more effective levers are different — plan choice and JVM tuning rather than code-level import restructuring.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Every Java Function cold start pays the cost of starting a JVM instance and loading the classes needed to run — this is structurally different from Node.js or Python, which have much lighter runtime startup. Application-level dependency loading adds on top of this baseline, but even a minimal Java function has a higher cold start floor than equivalent minimal functions in lighter runtimes, simply because of how the JVM itself initializes.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Use a Premium plan with always-ready instances</strong> if cold start latency is customer-facing — this is the most reliable fix for Java specifically, since it sidesteps the JVM startup cost being on the customer-facing path at all.</li>
+      <li><strong>Minimize the dependency tree</strong> where possible — fewer classes to load on startup means less on top of the JVM's own baseline cost.</li>
+      <li><strong>Evaluate whether the workload is Consumption-plan-appropriate</strong> — a latency-sensitive Java workload may be a better fit for Premium or a Dedicated plan from the start, rather than trying to optimize Consumption-plan cold starts down to an acceptable level.</li>
+      <li><strong>Investigate GraalVM native image compilation</strong> for extreme cold-start-sensitive scenarios — this trades build complexity for dramatically faster startup by ahead-of-time compiling to a native executable, though it's a bigger architectural commitment than the other fixes here.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> if Java is being chosen for a new Functions workload specifically because of team familiarity, factor the JVM cold start floor into that decision upfront — for latency-sensitive, infrequently-invoked workloads, this is a real and largely unavoidable characteristic of the runtime, not a configuration mistake to fix later.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Java</span>
+  </footer>
+</div>
+</body>
+</html>

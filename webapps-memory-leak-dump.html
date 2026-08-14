@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnosing Memory Leaks in Windows Web Apps with a Memory Dump — trace/log</title>
+<meta name="description" content="Diagnosing a slow memory leak in a Windows Web App with WinDbg: capturing dumps, comparing heap growth, and finding the leaking reference.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Diagnosing Memory Leaks in Windows Web Apps with a Memory Dump — trace/log">
+<meta property="og:description" content="Diagnosing a slow memory leak in a Windows Web App with WinDbg: capturing dumps, comparing heap growth, and finding the leaking reference.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Diagnosing Memory Leaks in Windows Web Apps with a Memory Dump — trace/log">
+<meta name="twitter:description" content="Diagnosing a slow memory leak in a Windows Web App with WinDbg: capturing dumps, comparing heap growth, and finding the leaking reference.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-memory-leak-dump.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-memory-leak-dump.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Diagnosing Memory Leaks in Windows Web Apps with a Memory Dump</h1>
+    <div class="post-meta">
+      <span>Windows App Service</span>
+      <span>WinDbg</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>Private memory usage for the worker process climbs steadily over hours or days rather than settling into a stable pattern. Eventually the app either hits the plan's memory limit and gets recycled, or starts throwing <code>OutOfMemoryException</code>. Restarting the app "fixes" it temporarily — a strong signal you're dealing with a leak rather than a single bad request.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Windows App Service Plan running ASP.NET or ASP.NET Core</li>
+      <li>Memory usage graph in the portal shows a steady upward slope, not spikes tied to traffic</li>
+      <li>Issue reproduces gradually over real production traffic, making it hard to catch in a quick local test</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>A memory graph alone tells you <em>that</em> memory is leaking, not <em>what</em> is holding onto it — for that you need a memory dump captured while usage is elevated, ideally two dumps taken some time apart so you can compare growth.</p>
+    <ul>
+      <li>In Kudu, go to <strong>Diagnose and solve problems → Diagnostic Tools</strong>, or use <strong>Process Explorer</strong> directly, and collect a memory dump of the <code>w3wp.exe</code> process while memory is elevated but before the app is recycled.</li>
+      <li>Take a second dump 15–30 minutes later if possible — comparing object counts between the two is far more informative than a single snapshot.</li>
+      <li>Open the dump in a tool that can inspect managed heap contents (WinDbg with SOS, or a managed memory profiler). Look at object counts by type, sorted by total retained size, not just instance count — a million small objects and ten enormous ones can both be the culprit.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a rising memory graph is often blamed on "GC not running" — but the .NET garbage collector generally does its job correctly. The far more common cause is something in application code holding a live reference to objects that should have been eligible for collection, which the GC correctly leaves alone.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>In managed applications, memory leaks are almost always reference leaks, not GC failures. The most frequent patterns:</p>
+    <ul>
+      <li><strong>Event handler subscriptions that are never unsubscribed</strong> — the subscriber keeps the publisher (or vice versa) alive indefinitely.</li>
+      <li><strong>Static collections that only ever grow</strong> — a cache or list with no eviction policy, accumulating one entry per request.</li>
+      <li><strong>Captured closures in long-lived callbacks</strong> — a lambda capturing a large object graph, registered against something with app-lifetime scope.</li>
+      <li><strong>Disposable objects not disposed</strong> — particularly unmanaged resources wrapped in .NET types (streams, HTTP clients created per-request instead of reused).</li>
+    </ul>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Identify the growing type</strong> from the dump comparison, then trace its GC roots (what's still referencing it) — this points directly at the offending code path.</li>
+      <li><strong>Unsubscribe event handlers</strong> in the appropriate lifecycle method (<code>Dispose</code>, or equivalent) for anything with app-lifetime scope subscribing to shorter-lived events.</li>
+      <li><strong>Add eviction to caches</strong> — use a bounded cache (size or time-based eviction) instead of an unbounded static dictionary or list.</li>
+      <li><strong>Reuse expensive clients</strong> — for example, use a single shared <code>HttpClient</code> (or <code>IHttpClientFactory</code>) instead of creating one per request.</li>
+      <li><strong>Verify with a follow-up dump</strong> after the fix — confirm the previously-growing type count now stabilizes under the same traffic pattern.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add a memory-usage alert well below your plan's hard limit (e.g. 75%) so you get paged while you still have time to capture a diagnostic dump — once the app is actively being recycled by the platform, you lose the window to catch it in a useful state.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

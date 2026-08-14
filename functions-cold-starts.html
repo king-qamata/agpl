@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diagnosing Cold Start Failures in Consumption Plan Functions — trace/log</title>
+<meta name="description" content="Why Consumption plan Functions time out on the first request after idle, and how to fix it: from Application Insights diagnosis to root cause.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Diagnosing Cold Start Failures in Consumption Plan Functions — trace/log">
+<meta property="og:description" content="Why Consumption plan Functions time out on the first request after idle, and how to fix it: from Application Insights diagnosis to root cause.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Diagnosing Cold Start Failures in Consumption Plan Functions — trace/log">
+<meta name="twitter:description" content="Why Consumption plan Functions time out on the first request after idle, and how to fix it: from Application Insights diagnosis to root cause.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-cold-starts.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-cold-starts.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Diagnosing Cold Start Failures in Consumption Plan Functions</h1>
+    <div class="post-meta">
+      <span>Consumption Plan</span>
+      <span>Application Insights</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An HTTP-triggered function on a Consumption plan responds in under 100ms most of the time, but a subset of requests — usually the first request after a period of inactivity — takes 3 to 8 seconds or times out entirely at the client. Customers report this as "intermittent slowness" or "random timeouts," which makes it easy to misdiagnose as a downstream dependency issue rather than a hosting-model behavior.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Function App hosted on <strong>Consumption Plan</strong> (Y1 SKU)</li>
+      <li>Runtime: .NET or Node.js in-process, HTTP trigger</li>
+      <li>Client is a synchronous frontend or API gateway with a fixed timeout (often 3–5 seconds)</li>
+      <li>Traffic pattern: bursty, with idle gaps longer than ~20 minutes</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Start in Application Insights rather than guessing. The <strong>Performance</strong> blade will show a bimodal latency distribution — a tight cluster near the true execution time, and a second cluster far to the right. That second cluster is your cold start population.</p>
+
+    <div class="code-block">
+      <div class="code-block-label">Kusto Query Language (KQL) — isolate cold start requests</div>
+      <pre>requests
+| where timestamp > ago(24h)
+| where name == "GET /api/YourFunction"
+| extend isColdStart = iff(duration > 3000, "cold", "warm")
+| summarize count(), avg(duration) by isColdStart, bin(timestamp, 1h)
+| order by timestamp desc</pre>
+    </div>
+
+    <p>Cross-reference against the <strong>Live Metrics</strong> stream during a known idle-then-burst window. If you see a spike in "Instances" at the same moment latency spikes, that confirms the platform is spinning up a new worker rather than reusing a warm one.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> engineers often chase this as a database connection issue because the trace shows a slow SQL call first in the request. In reality, the SQL client's connection pool is also cold — the entire process, not just the function, is starting fresh.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>On the Consumption plan, Azure deallocates idle instances and scales to zero. The next incoming request triggers a new instance: the Functions host boots, the language worker starts, and — critically — any static initializers, dependency injection container setup, or connection pools in your code run for the first time. This is the cold start. It is expected platform behavior, not a bug, but it becomes a customer-facing problem when a caller's timeout is shorter than the cold start duration.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <p>There is no single fix — match the option to the constraint:</p>
+    <ul>
+      <li><strong>If the timeout budget is fixed and short:</strong> move to a <strong>Premium plan</strong> with pre-warmed instances (<code>minimumElasticInstanceCount</code>). This is the only option that structurally removes cold starts rather than reducing their frequency.</li>
+      <li><strong>If cost rules out Premium:</strong> reduce cold start duration itself — trim package dependencies, avoid heavy static constructors, and lazy-load anything not needed on the first request path.</li>
+      <li><strong>If traffic is predictable:</strong> a scheduled "warm-up" timer trigger pinging the function every few minutes keeps an instance alive, though this does not survive scale-out to a second instance under burst load.</li>
+      <li><strong>Always:</strong> increase the caller's timeout where possible, or return an immediate 202-style response for long-running work instead of blocking the caller on a cold path.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add an Application Insights availability test or alert on the <code>requests | duration p95</code> metric, not just average duration — averages hide cold starts in high-volume apps, but p95/p99 exposes them immediately.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions</span>
+  </footer>
+</div>
+</body>
+</html>

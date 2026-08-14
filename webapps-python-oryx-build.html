@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troubleshooting Python Deployments on App Service Linux: When Oryx Silently Skips Your Build — trace/log</title>
+<meta name="description" content="A Python deployment that succeeds but serves old code usually means Oryx never rebuilt the virtual environment, often because of a build configuration mismatch that produces no error.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Troubleshooting Python Deployments on App Service Linux: When Oryx Silently Skips Your Build — trace/log">
+<meta property="og:description" content="A Python deployment that succeeds but serves old code usually means Oryx never rebuilt the virtual environment, often because of a build configuration mismatch that produces no error.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Troubleshooting Python Deployments on App Service Linux: When Oryx Silently Skips Your Build — trace/log">
+<meta name="twitter:description" content="A Python deployment that succeeds but serves old code usually means Oryx never rebuilt the virtual environment, often because of a build configuration mismatch that produces no error.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-python-oryx-build.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-python-oryx-build.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Python</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Troubleshooting Python Deployments on App Service Linux: When Oryx Silently Skips Your Build</h1>
+    <div class="post-meta">
+      <span>Python</span>
+      <span>Oryx</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A deployment to a Python App Service Linux app reports success in the pipeline, but the app continues serving old behavior — a bug fix doesn't take effect, or a newly added dependency causes an <code>ImportError</code> at runtime even though it's listed in <code>requirements.txt</code> and the deployment "succeeded."</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Python app on App Service Linux, built via Oryx (Azure's build system for code-based, non-container deployments)</li>
+      <li>Deployment via ZipDeploy, GitHub Actions, or Azure DevOps</li>
+      <li>Recently changed <code>requirements.txt</code>, Python version, or build configuration</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Oryx decides whether to run a build (create a new virtual environment and install dependencies) based on specific triggers and settings — it doesn't unconditionally rebuild on every deployment. If those triggers don't fire the way you expect, your zip package gets deployed as-is without a fresh <code>pip install</code>, and the app runs against whatever virtual environment already existed.</p>
+    <ul>
+      <li><strong>Check the deployment log for actual build output</strong> — look specifically for Oryx's "Running pip install" step in the Kudu deployment log, not just a generic "deployment successful" message. If that step is missing or skipped, no rebuild happened.</li>
+      <li><strong>Check <code>SCM_DO_BUILD_DURING_DEPLOYMENT</code></strong> — if this app setting is explicitly set to <code>false</code>, Oryx won't build at all regardless of what changed.</li>
+      <li><strong>Check whether you're deploying via Run-From-Package</strong> — this deployment mode changes how and where dependencies are expected to already be built, and mixing it with an assumption of Oryx doing a fresh build on every deploy is a common source of confusion.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-block-label">bash — confirm the build setting</div>
+      <pre>az webapp config appsettings list --name my-app --resource-group my-rg --query "[?name=='SCM_DO_BUILD_DURING_DEPLOYMENT']"</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a deployment that "succeeds" but doesn't reflect code changes is often mistaken for a caching issue (browser cache, CDN cache) when the actual cause is that the new code and dependencies were never built into the running environment in the first place.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Oryx's build behavior is controlled by specific settings and deployment method, not an unconditional "always rebuild" default. A deployment method or setting that skips the build step (Run-From-Package expecting pre-built dependencies, or <code>SCM_DO_BUILD_DURING_DEPLOYMENT</code> set to false) produces a "successful" deployment that's really just a file copy — the app then runs against whatever Python environment was already present, which may not include your latest changes.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Explicitly enable the build step</strong> by setting <code>SCM_DO_BUILD_DURING_DEPLOYMENT=true</code> if you want Oryx to build on every deployment via ZipDeploy.</li>
+      <li><strong>If using Run-From-Package,</strong> build dependencies into the package before deployment (as part of your CI pipeline) rather than expecting Oryx to build them post-deployment — these are two different models and shouldn't be mixed.</li>
+      <li><strong>Verify the build actually ran</strong> by checking the Kudu deployment log for the specific pip install step after every deployment during initial pipeline setup, until you're confident the configuration is correct.</li>
+      <li><strong>Pin your Python version explicitly</strong> in app settings (<code>PYTHON_VERSION</code> or the linux_fx_version) to avoid Oryx selecting a different interpreter version than you tested against, which can also cause dependency resolution differences.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add a simple version or build-timestamp endpoint to your app that you can check immediately after every deployment — this catches "deployment succeeded but nothing actually changed" issues immediately rather than after a confusing bug report.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Python</span>
+  </footer>
+</div>
+</body>
+</html>

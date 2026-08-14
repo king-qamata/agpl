@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>.NET Isolated Worker Cold Starts: Why They're Slower Than In-Process — trace/log</title>
+<meta name="description" content="Migrating from the in-process .NET model to the isolated worker model often makes cold starts noticeably worse, because of an extra process boundary most teams don't expect.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content=".NET Isolated Worker Cold Starts: Why They're Slower Than In-Process — trace/log">
+<meta property="og:description" content="Migrating from the in-process .NET model to the isolated worker model often makes cold starts noticeably worse, because of an extra process boundary most teams don't expect.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content=".NET Isolated Worker Cold Starts: Why They're Slower Than In-Process — trace/log">
+<meta name="twitter:description" content="Migrating from the in-process .NET model to the isolated worker model often makes cold starts noticeably worse, because of an extra process boundary most teams don't expect.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-dotnet-isolated-cold-start.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-dotnet-isolated-cold-start.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · .NET</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>.NET Isolated Worker Cold Starts: Why They're Slower Than In-Process</h1>
+    <div class="post-meta">
+      <span>.NET Isolated</span>
+      <span>Cold Start</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>After migrating a Function App from the in-process .NET model to the isolated worker model (required for newer .NET versions), cold start times get noticeably worse — not marginally, often by a meaningful multiple — even though the application code itself is largely unchanged.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Functions on .NET, recently migrated from in-process to isolated worker model</li>
+      <li>Consumption or Premium plan where cold start behavior is customer-visible</li>
+      <li>Same trigger types and general workload shape as before migration</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Compare cold start duration before and after the migration using the same KQL pattern from the <a href="functions-cold-starts.html" style="color:inherit;text-decoration:underline;">cold start troubleshooting post</a> on this site — filter to invocations following an idle period and look at the duration distribution. A consistent, substantial increase specifically correlated with the isolated-worker migration (not a code change, not a traffic pattern change) points at the hosting model itself as the cause.</p>
+    <div class="code-block">
+      <div class="code-block-label">KQL — compare cold start duration across a migration date</div>
+      <pre>requests
+| where timestamp > ago(14d)
+| where duration > 2000
+| summarize avg(duration), count() by bin(timestamp, 1d)
+| order by timestamp asc</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a cold start regression after a .NET version upgrade is often attributed to the new .NET version itself being slower, when the isolated worker model — not the .NET version — is usually the larger factor. Teams sometimes spend time trying older/newer .NET minor versions without addressing the actual structural cause.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>The isolated worker model runs your function code in a separate process from the Functions host, communicating over gRPC — this is what enables full control over the .NET version and middleware pipeline, but it also means a cold start now has to start two processes and establish that communication channel, rather than loading your code directly into the host process as the in-process model does. That additional process boundary is the structural source of the extra cold start latency, not a regression in .NET itself.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>If cold start latency is customer-critical, move to Premium plan</strong> with always-ready instances — this is the most reliable way to eliminate the isolated-worker cold start penalty rather than trying to minimize it on Consumption.</li>
+      <li><strong>Trim startup work in <code>Program.cs</code></strong> — minimize what runs during host and DI container initialization, since this now happens across the process boundary on every cold start.</li>
+      <li><strong>Use ReadyToRun (R2R) compilation</strong> for your deployment, which precompiles IL to native code and measurably reduces isolated worker startup time compared to a standard build.</li>
+      <li><strong>If in-process is still viable for your .NET version,</strong> weigh whether you actually need isolated-worker-specific features (custom middleware, non-LTS .NET versions) against the cold start cost — in-process remains meaningfully faster to cold start where it's still supported.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> if evaluating a move to isolated worker ahead of an in-process deprecation deadline, benchmark cold start behavior specifically — not just functional correctness — before committing, so the latency change is a planned trade-off rather than a surprise found in production.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · .NET</span>
+  </footer>
+</div>
+</body>
+</html>

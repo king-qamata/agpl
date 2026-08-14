@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>High CPU on App Service: Reading Process Explorer Correctly — trace/log</title>
+<meta name="description" content="Sustained high CPU on App Service usually isn't a capacity problem. Here's how to use Kudu Process Explorer to find the real cause.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="High CPU on App Service: Reading Process Explorer Correctly — trace/log">
+<meta property="og:description" content="Sustained high CPU on App Service usually isn't a capacity problem. Here's how to use Kudu Process Explorer to find the real cause.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="High CPU on App Service: Reading Process Explorer Correctly — trace/log">
+<meta name="twitter:description" content="Sustained high CPU on App Service usually isn't a capacity problem. Here's how to use Kudu Process Explorer to find the real cause.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-high-cpu.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-high-cpu.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>High CPU on App Service: Reading Process Explorer Correctly</h1>
+    <div class="post-meta">
+      <span>Windows App Service Plan</span>
+      <span>Kudu</span>
+      <span>9 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>CPU utilization on the App Service Plan sits at 80–100% for sustained periods during business hours. Page loads slow down or start timing out. Scaling out to more instances helps temporarily, but each new instance also climbs to high CPU within minutes — which is the tell that this isn't a capacity problem, it's a per-request efficiency problem.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Windows App Service Plan (commonly P1v3 or similar)</li>
+      <li>ASP.NET Core application</li>
+      <li>Autoscale rule configured on CPU percentage</li>
+      <li>Traffic is steady rather than bursty — CPU climbs gradually with load, not in a single spike</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Resist the urge to just scale up. Go to the Kudu console at <code>https://&lt;your-app&gt;.scm.azurewebsites.net</code> and open <strong>Process Explorer</strong>. This shows every process under the app's worker, including each <code>w3wp.exe</code> and its live CPU percentage — this is the fastest way to confirm the app's own code is the consumer, not something external like antivirus scanning or a sidecar process.</p>
+
+    <p>Once you've confirmed the worker process itself is hot, capture evidence rather than guessing at the cause:</p>
+    <ul>
+      <li>Use <strong>Diagnose and solve problems → Diagnostic Tools → Collect a memory dump</strong> while CPU is elevated, or trigger a CPU profile directly from Process Explorer if available on your plan tier.</li>
+      <li>Download the dump and inspect thread stacks — look for a large number of threads blocked in the same call path, which points to lock contention or thread pool starvation rather than one runaway computation.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-block-label">Kusto Query Language (KQL) — correlate CPU with request volume</div>
+      <pre>AppServiceHTTPLogs
+| where TimeGenerated > ago(2h)
+| summarize RequestCount=count(), AvgDuration=avg(TimeTaken) by bin(TimeGenerated, 5m)
+| join kind=inner (
+    AzureMetrics
+    | where MetricName == "CpuPercentage"
+    | summarize AvgCpu=avg(Average) by bin(TimeGenerated, 5m)
+) on TimeGenerated
+| order by TimeGenerated desc</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams often jump straight to "we need a bigger SKU." That masks the symptom for a while, but if the underlying cause is thread pool starvation or an O(n²) code path, CPU will climb right back up as traffic grows into the new headroom.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>In practice, sustained high CPU under steady load traces back to one of a small set of causes:</p>
+    <ul>
+      <li><strong>Thread pool starvation:</strong> synchronous blocking calls (<code>.Result</code>, <code>.Wait()</code>) on async code tie up worker threads, so the runtime spins up more threads than it needs and burns CPU on context switching.</li>
+      <li><strong>Inefficient hot-path code:</strong> unindexed LINQ over large in-memory collections, or a regex re-compiled on every request instead of cached, both scale badly with traffic.</li>
+      <li><strong>Missing caching:</strong> expensive computation or serialization repeated per-request when the result rarely changes.</li>
+      <li><strong>GC pressure:</strong> excessive short-lived allocations force frequent garbage collection, which itself consumes CPU.</li>
+    </ul>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Thread starvation:</strong> convert blocking calls to <code>async</code>/<code>await</code> all the way up the call stack. Avoid mixing sync-over-async.</li>
+      <li><strong>Hot-path inefficiency:</strong> profile with the captured dump or a local profiler to find the actual method consuming CPU, then optimize or cache its output.</li>
+      <li><strong>Caching:</strong> add response caching or an Azure Cache for Redis layer in front of expensive, repeatable computation.</li>
+      <li><strong>GC pressure:</strong> reduce large object allocations in hot paths; consider Server GC mode for App Service if not already enabled.</li>
+      <li><strong>Short-term mitigation only:</strong> scaling up or out buys time while you root-cause — it is not the fix on its own.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> add a standing alert on CPU percentage sustained over 80% for more than 10 minutes, separate from your autoscale trigger, so you get notified even when autoscale successfully hides the symptom from users.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

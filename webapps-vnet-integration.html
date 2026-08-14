@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VNET Integration Failures: Common Misconfigurations — trace/log</title>
+<meta name="description" content="Regional VNET Integration on App Service silently fails to route traffic when the delegated subnet, route table, or DNS resolution isn't configured correctly.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="VNET Integration Failures: Common Misconfigurations — trace/log">
+<meta property="og:description" content="Regional VNET Integration on App Service silently fails to route traffic when the delegated subnet, route table, or DNS resolution isn't configured correctly.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="VNET Integration Failures: Common Misconfigurations — trace/log">
+<meta name="twitter:description" content="Regional VNET Integration on App Service silently fails to route traffic when the delegated subnet, route table, or DNS resolution isn't configured correctly.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-vnet-integration.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-vnet-integration.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>VNET Integration Failures: Common Misconfigurations</h1>
+    <div class="post-meta">
+      <span>Regional VNET Integration</span>
+      <span>Networking</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An App Service configured with Regional VNET Integration can't reach a resource inside the VNET — commonly a private database, an internal API, or a resource behind a private endpoint — even though the integration shows as "Connected" in the portal and outbound traffic to public internet destinations works fine.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>App Service with Regional VNET Integration enabled, connected to a delegated subnet</li>
+      <li>Target resource is inside the same VNET, a peered VNET, or reachable only via a private endpoint</li>
+      <li>Possibly a custom route table (UDR) applied to the integration subnet</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>"Connected" in the portal only confirms the integration itself was provisioned — it does not confirm traffic is actually routing correctly. Work through these in order:</p>
+    <ul>
+      <li><strong>Confirm the subnet is properly delegated</strong> to <code>Microsoft.Web/serverFarms</code> and isn't shared with another resource type that could conflict.</li>
+      <li><strong>Check "Route All" configuration.</strong> By default, only traffic destined for private IP ranges routes through the VNET; if you need all outbound traffic (including internet-bound) to go through the VNET, that has to be explicitly enabled.</li>
+      <li><strong>Verify DNS resolution.</strong> If the target is a private endpoint, the App Service needs to resolve its private DNS name correctly — check whether a custom DNS server or private DNS zone is linked to the VNET, and whether the App Service is configured to use it.</li>
+      <li><strong>Check for a conflicting route table (UDR)</strong> on the integration subnet that might be sending traffic somewhere unexpected, such as through a firewall or NVA that isn't configured to allow the destination.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-block-label">bash — quick DNS resolution check from Kudu console</div>
+      <pre>nameresolver internal-db.privatelink.database.windows.net</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams often assume the integration itself is broken and try recreating it, when the actual issue is DNS resolution returning the resource's public IP instead of its private one — the connection then fails or times out at the network layer, not because the VNET integration failed.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>VNET Integration failures are rarely about the integration itself — they're almost always one of three things: the subnet delegation or route configuration doesn't send the right traffic through the VNET, DNS resolves to the wrong (public) address so the app never even attempts to use the private path, or a route table redirects traffic through a network appliance that isn't configured to permit it.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Fix delegation:</strong> ensure the integration subnet is delegated solely to <code>Microsoft.Web/serverFarms</code>.</li>
+      <li><strong>Enable Route All if needed:</strong> turn on "Route All" under the VNET Integration networking settings if traffic other than RFC1918 private ranges also needs to traverse the VNET.</li>
+      <li><strong>Fix DNS:</strong> link the correct private DNS zone to the VNET, and if using a custom DNS server, configure the App Service's DNS settings to point to it explicitly rather than relying on Azure-provided DNS.</li>
+      <li><strong>Audit route tables:</strong> review any UDR applied to the integration subnet for unintended routes, and confirm any NVA or firewall in the path explicitly allows the destination.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> after any VNET Integration change, test connectivity from the Kudu console (SSH or the console tab) rather than only checking the portal's connection status — the portal confirms provisioning, not actual reachability.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

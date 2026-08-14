@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACI vs Web App for Containers vs ACA: Choosing the Right Azure Compute Service — trace/log</title>
+<meta name="description" content="A decision guide for Azure Container Instances, Web App for Containers, and Azure Container Apps — what each is actually for, and which scenarios point to which service.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="ACI vs Web App for Containers vs ACA: Choosing the Right Azure Compute Service — trace/log">
+<meta property="og:description" content="A decision guide for Azure Container Instances, Web App for Containers, and Azure Container Apps — what each is actually for, and which scenarios point to which service.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ACI vs Web App for Containers vs ACA: Choosing the Right Azure Compute Service — trace/log">
+<meta name="twitter:description" content="A decision guide for Azure Container Instances, Web App for Containers, and Azure Container Apps — what each is actually for, and which scenarios point to which service.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-aci-vs-webapp-vs-aca.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-aci-vs-webapp-vs-aca.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<style>
+  .compare-table{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;}
+  .compare-table th{
+    font-family:var(--mono);font-size:11px;color:var(--azure);
+    text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);
+    text-transform:uppercase;letter-spacing:0.04em;
+  }
+  .compare-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);}
+  .compare-table tr:last-child td{border-bottom:none;}
+  .compare-table td:first-child{color:var(--text);font-weight:500;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>ACI vs Web App for Containers vs ACA: Choosing the Right Azure Compute Service</h1>
+    <div class="post-meta">
+      <span>Architecture</span>
+      <span>Decision Guide</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>All three services run containers, but they solve different problems. This is the decision guide worth having before picking one — getting it wrong usually doesn't show up until you need a feature the chosen service doesn't have.</p>
+
+    <h2><span class="tag tut">01</span>What each one actually is</h2>
+    <p><strong>Azure Container Instances (ACI)</strong> is the closest thing Azure has to <code>docker run</code> in the cloud — no orchestration layer, no App Service Plan, just a container given CPU and memory and started immediately. It's built for short-lived and batch workloads, not always-on services.</p>
+    <p><strong>Web App for Containers</strong> is Azure App Service running your container instead of your code directly. You get everything App Service normally provides — deployment slots, managed TLS, custom domains, built-in authentication — with a container as the deployment artifact.</p>
+    <p><strong>Azure Container Apps (ACA)</strong> is Microsoft's serverless platform for cloud-native workloads, built on managed Kubernetes underneath (KEDA for event-driven scaling, Envoy for ingress, optional Dapr integration) without exposing cluster management to you directly.</p>
+
+    <h2><span class="tag tut">02</span>Side-by-side on the features that actually decide things</h2>
+    <table class="compare-table">
+      <tr><th>Capability</th><th>ACI</th><th>Web App for Containers</th><th>ACA</th></tr>
+      <tr><td>Scale to zero</td><td>No</td><td>No</td><td>Yes</td></tr>
+      <tr><td>Event-driven autoscaling</td><td>No</td><td>No</td><td>Yes (KEDA)</td></tr>
+      <tr><td>Traffic splitting / canary</td><td>No</td><td>No</td><td>Yes (revisions)</td></tr>
+      <tr><td>Deployment slots</td><td>No</td><td>Yes</td><td>No (uses revisions instead)</td></tr>
+      <tr><td>Built-in authentication</td><td>No</td><td>Yes</td><td>No (implement at app/gateway)</td></tr>
+      <tr><td>Automatic HTTPS + custom domains</td><td>Limited</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Dapr integration</td><td>No</td><td>No</td><td>Yes</td></tr>
+      <tr><td>Best fit</td><td>Batch jobs, scripts</td><td>Traditional web apps</td><td>Microservices, event-driven</td></tr>
+    </table>
+
+    <h2><span class="tag tut">03</span>Decision guide</h2>
+    <p>A few scenarios where the choice is usually clear-cut:</p>
+    <ul>
+      <li><strong>One-off batch processing or scheduled scripts</strong> → ACI. No need for a continuously running service, billed only for actual runtime.</li>
+      <li><strong>A traditional website</strong> (WordPress, Django, ASP.NET, Laravel) → Web App for Containers. Deployment slots and built-in auth are hard to beat for this shape of workload — and this site's own <a href="../posts/webapps-wordpress-cors.html" style="color:inherit;text-decoration:underline;">WordPress CORS post</a> and <a href="../posts/webapps-exit-code-132.html" style="color:inherit;text-decoration:underline;">container crash post</a> both cover Web App for Containers specifically for this reason.</li>
+      <li><strong>A microservices architecture with independent scaling per service</strong> → ACA. Revisions and traffic splitting exist specifically for this.</li>
+      <li><strong>Event-driven processing</strong> (Service Bus, Event Hubs, Kafka, Queue Storage) → ACA. Native KEDA-based autoscaling from event sources is the reason this exists.</li>
+      <li><strong>Cost-sensitive workloads with long idle periods</strong> → ACA. Scale-to-zero means you're not paying for idle compute the way you would on Web App for Containers or a minimum-replica ACA config.</li>
+      <li><strong>Enterprise line-of-business web application</strong> → Web App for Containers. The maturity of App Service's operational tooling and enterprise integrations usually outweighs ACA's cloud-native features for this shape of app.</li>
+    </ul>
+
+    <div class="callout tut"><strong>The practical test:</strong> if you're reaching for deployment slots and built-in auth, you want Web App for Containers. If you're reaching for scale-to-zero and event-driven triggers, you want ACA. If you just need a container to run once and exit, you want ACI — resist the temptation to over-engineer a batch job onto a platform built for always-on services.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

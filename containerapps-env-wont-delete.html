@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Container App Environment Won't Delete: Two Common Blockers — trace/log</title>
+<meta name="description" content="A Container App Environment that won't delete is usually blocked by dependent apps or a networking resource lock. Here's the checklist.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Container App Environment Won't Delete: Two Common Blockers — trace/log">
+<meta property="og:description" content="A Container App Environment that won't delete is usually blocked by dependent apps or a networking resource lock. Here's the checklist.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Container App Environment Won't Delete: Two Common Blockers — trace/log">
+<meta name="twitter:description" content="A Container App Environment that won't delete is usually blocked by dependent apps or a networking resource lock. Here's the checklist.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-env-wont-delete.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-env-wont-delete.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Container App Environment Won't Delete: Two Common Blockers</h1>
+    <div class="post-meta">
+      <span>Environments</span>
+      <span>Networking</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A <code>az containerapp env delete</code> call, or a delete from the portal, fails or hangs indefinitely. The deletion operation either times out, returns a generic error about the resource being in use, or appears to succeed in the portal but the environment resource remains visible in the resource group afterward.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Apps Environment, often one created with a custom VNet integration</li>
+      <li>Resource group managed partly through IaC (Bicep/Terraform) and partly through manual portal changes</li>
+      <li>Environment has one or more Container Apps still deployed inside it, or has an associated private DNS zone</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>The two most common blockers each leave a distinct trace, so check both rather than assuming which one applies:</p>
+    <ul>
+      <li><strong>Dependent Container Apps still exist.</strong> Check whether any Container Apps are still associated with the environment — an environment generally can't be removed while apps still reference it.</li>
+      <li><strong>Networking dependencies are locked in.</strong> If the environment uses a custom VNet, check for a lingering private DNS zone link, delegated subnet, or a resource lock (explicit <code>Delete</code> or <code>ReadOnly</code> lock) on the resource group or the VNet resource itself.</li>
+    </ul>
+    <p>The Activity Log on the resource group is the fastest way to see the actual error Azure Resource Manager returned for the failed delete operation, rather than relying on the portal's generic failure toast.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a delete that appears to "hang" in the portal is often not actually stuck — it failed silently against a dependency and the portal simply didn't surface the specific reason. Checking the Activity Log directly avoids repeated retries against the same blocker.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Azure Container Apps Environments manage networking and DNS resources tied to their lifecycle. When those resources have external dependencies — an app still deployed, a manually created DNS record, or a resource lock applied outside the IaC pipeline that created the environment — the delete operation can't safely clean up everything, so Resource Manager refuses the operation rather than leaving orphaned network state.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Delete Container Apps first:</strong> remove all Container Apps deployed into the environment before deleting the environment itself.</li>
+      <li><strong>Check and remove resource locks:</strong> look at the resource group and the VNet/subnet for any <code>Delete</code> or <code>ReadOnly</code> locks and remove them if you have authorization to do so.</li>
+      <li><strong>Clean up DNS manually if needed:</strong> if a private DNS zone link was created outside the environment's own lifecycle (e.g. manually or by a separate script), unlink it before retrying the delete.</li>
+      <li><strong>Retry with verbose output:</strong> use <code>az containerapp env delete --name &lt;env&gt; --resource-group &lt;rg&gt; --debug</code> to get the specific ARM error rather than guessing.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> if you manage the environment with Bicep or Terraform, also manage its networking dependencies (DNS zones, locks) in the same IaC definition so `terraform destroy` or a stack teardown can clean everything up in the correct order automatically.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+</div>
+</body>
+</html>

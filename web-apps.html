@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Web Apps — trace/log</title>
+<meta name="description" content="App Service troubleshooting and tutorials: Kudu, Process Explorer, CPU and memory diagnostics, scaling, and hosting models for Windows and Linux Web Apps.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Web Apps — trace/log">
+<meta property="og:description" content="App Service troubleshooting and tutorials: Kudu, Process Explorer, CPU and memory diagnostics, scaling, and hosting models for Windows and Linux Web Apps.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Web Apps — trace/log">
+<meta name="twitter:description" content="App Service troubleshooting and tutorials: Kudu, Process Explorer, CPU and memory diagnostics, scaling, and hosting models for Windows and Linux Web Apps.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/domains/web-apps.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/domains/web-apps.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="web-apps.html" class="active">Web Apps</a>
+      <a href="functions.html">Functions</a>
+      <a href="container-apps.html">Container Apps</a>
+      <a href="static-web-apps.html">Static Web Apps</a>
+      <a href="security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span><span class="current">Web Apps</span>
+  </div>
+
+  <div class="page-intro">
+    <span class="page-tag">DOMAIN 01 · APP SERVICE (PaaS)</span>
+    <h1>Web Apps</h1>
+    <p>Hosting models, scaling, performance optimization, and the diagnostic tools engineers actually reach for: Kudu, Process Explorer, and remote debugging. Covers Windows and Linux Web Apps, plus language-specific troubleshooting for .NET, Java, Python, and Node.js.</p>
+  </div>
+
+  <div class="section-label"><span class="idx">01</span> Troubleshooting <span class="count">(7)</span></div>
+  <div class="queue">
+    <a href="../posts/webapps-high-cpu.html" class="ticket">
+      <span class="sev sev-1">SEV-1</span>
+      <div class="ticket-body">
+        <div class="ticket-title">High CPU on App Service: reading Process Explorer correctly</div>
+        <div class="ticket-meta">9 min read · Kudu · Thread Pool Starvation</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-memory-leak-dump.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Diagnosing Memory Leaks in Windows Web Apps with a Memory Dump</div>
+        <div class="ticket-meta">8 min read · WinDbg · ProcDump</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-exit-code-132.html" class="ticket">
+      <span class="sev sev-1">SEV-1</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Container Crash with Exit Code 132 (SIGILL): Diagnosing Invalid CPU Instructions</div>
+        <div class="ticket-meta">7 min read · Web App for Containers</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-wordpress-cors.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Troubleshooting CORS Errors Between WordPress, CDN/Front Door, and Blob Storage</div>
+        <div class="ticket-meta">7 min read · WordPress · Azure CDN</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-vnet-integration.html" class="ticket">
+      <span class="sev sev-1">SEV-1</span>
+      <div class="ticket-body">
+        <div class="ticket-title">VNET Integration Failures: Common Misconfigurations</div>
+        <div class="ticket-meta">7 min read · Networking · VNET</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-failed-slot-swap.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Failed Slot Swap: Diagnosing "Cannot Swap Site Slots" Errors</div>
+        <div class="ticket-meta">7 min read · Deployment Slots</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-http-409-deployment.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Troubleshooting HTTP 409s When Deploying to App Service</div>
+        <div class="ticket-meta">6 min read · Kudu · CI/CD</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <div class="section-label"><span class="idx">02</span> By Language <span class="count">(8)</span></div>
+  <div class="queue">
+    <a href="../posts/webapps-java-nosuchmethoderror.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Java on App Service: Diagnosing java.lang.NoSuchMethodError</div>
+        <div class="ticket-meta">7 min read · Java · Classpath Conflicts</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-dotnet-trace-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">.NET on App Service: Capturing a dotnet-trace for High CPU and Slow Requests</div>
+        <div class="ticket-meta">7 min read · .NET Core · Intermediate</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-dotnet-diagnostic-tools.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Installing Diagnostic Tools in .NET Core Custom Container Images</div>
+        <div class="ticket-meta">6 min read · .NET Core · Custom Containers</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-python-oryx-output-tar.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Python on App Service: "Could Not Find output.tar.gz" After Deployment</div>
+        <div class="ticket-meta">6 min read · Python · Oryx</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-python-oryx-build.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Troubleshooting Python Deployments: When Oryx Silently Skips Your Build</div>
+        <div class="ticket-meta">7 min read · Python · Oryx</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-nodejs-node-gyp.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Node.js Deployment Fails: node-gyp and Native Module Build Errors on Oryx</div>
+        <div class="ticket-meta">6 min read · Node.js · Oryx</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-nodejs-event-loop.html" class="ticket">
+      <span class="sev sev-1">SEV-1</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Diagnosing Node.js Apps That Crash Under Load on App Service Linux</div>
+        <div class="ticket-meta">7 min read · Node.js · Crashes</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-nodejs-event-loop-blocking.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Node.js Event Loop Blocking: Diagnosing Unresponsive (Not Crashed) App Service Apps</div>
+        <div class="ticket-meta">6 min read · Node.js · Event Loop</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <div class="section-label"><span class="idx">03</span> Tutorials <span class="count">(4)</span></div>
+  <div class="queue">
+    <a href="../posts/webapps-runtime-stack-decision-guide.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Choosing an App Service Runtime Stack: .NET vs Java vs Python vs Node.js</div>
+        <div class="ticket-meta">8 min read · Architecture · Decision Guide</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-kudu-diagnostic-logs-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Enabling Advanced Diagnostic Logs and Accessing the Kudu Console</div>
+        <div class="ticket-meta">6 min read · Step-by-step · Beginner</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-autoscale-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Configuring Autoscale Rules Based on CPU and Queue Length</div>
+        <div class="ticket-meta">7 min read · Step-by-step · Intermediate</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/webapps-redis-cache-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Configuring a Local Redis Cache to Cut Database Load on Linux App Service</div>
+        <div class="ticket-meta">7 min read · Step-by-step · Intermediate</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+
+</div>
+</body>
+</html>

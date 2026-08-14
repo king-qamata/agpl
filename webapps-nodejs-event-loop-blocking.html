@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node.js Event Loop Blocking: Diagnosing Unresponsive (Not Crashed) App Service Apps — trace/log</title>
+<meta name="description" content="A Node.js app that stops responding but doesn't crash is a different problem from an app that dies — this covers diagnosing synchronous code blocking the single event loop thread.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Node.js Event Loop Blocking: Diagnosing Unresponsive (Not Crashed) App Service Apps — trace/log">
+<meta property="og:description" content="A Node.js app that stops responding but doesn't crash is a different problem from an app that dies — this covers diagnosing synchronous code blocking the single event loop thread.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Node.js Event Loop Blocking: Diagnosing Unresponsive (Not Crashed) App Service Apps — trace/log">
+<meta name="twitter:description" content="A Node.js app that stops responding but doesn't crash is a different problem from an app that dies — this covers diagnosing synchronous code blocking the single event loop thread.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-nodejs-event-loop-blocking.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-nodejs-event-loop-blocking.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Node.js</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Node.js Event Loop Blocking: Diagnosing Unresponsive (Not Crashed) App Service Apps</h1>
+    <div class="post-meta">
+      <span>Node.js</span>
+      <span>Event Loop</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Node.js app becomes completely unresponsive to new requests for a period, then recovers on its own — this is distinct from the crash-and-restart pattern covered elsewhere on this site. The process is still alive and listed as running the whole time; it simply stops responding to anything.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Node.js on App Service Linux, single-threaded request handling</li>
+      <li>Hangs correlate with specific request types — large payloads, complex computation, or a particular endpoint</li>
+      <li>No crash, no restart, no error in logs during the hang itself</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Node.js runs all JavaScript on a single thread via the event loop. Any synchronous operation that takes a long time blocks that thread entirely — every other request, for every other client, waits until it finishes. This produces a hang, not a crash, which is the key differentiator from an out-of-memory or uncaught-exception failure.</p>
+    <ul>
+      <li><strong>Correlate the hang with a specific request type</strong> — synchronous JSON operations on large payloads, synchronous file reads, or synchronous crypto/hashing are frequent causes.</li>
+      <li><strong>Check regex patterns against user-controlled input</strong> for catastrophic backtracking — a regex that's fine on typical input can take exponentially longer on a crafted or edge-case string.</li>
+      <li><strong>Capture a CPU profile during a live reproduction</strong> rather than guessing — the profile will show one function pinning the main thread for the duration of the hang.</li>
+    </ul>
+
+    <div class="code-block">
+      <div class="code-block-label">bash — capture a CPU profile</div>
+      <pre>node --prof app.js
+# reproduce the hang, then:
+node --prof-process isolate-*.log > profile.txt</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the app doesn't crash and comes back on its own, this is often mistaken for a downstream dependency timing out or a networking blip. If there's no corresponding downstream error and the app itself was simply unresponsive, the blocking code is almost always local to the request handler, not an external system.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>A synchronous, CPU-bound operation on the event loop thread — regardless of what triggers it — blocks all other work until it completes. Unlike a crash, nothing fails; the process is simply busy doing one thing and can't service anything else in the meantime, which is why it self-recovers once that operation finishes.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Convert blocking calls to async equivalents</strong> — <code>fs.readFile</code> instead of <code>fs.readFileSync</code>, streaming instead of loading large payloads fully into memory before processing.</li>
+      <li><strong>Audit and test regex patterns</strong> used against untrusted input specifically for backtracking risk.</li>
+      <li><strong>Move genuinely CPU-heavy work to worker threads</strong> so it doesn't compete with request handling on the main thread.</li>
+      <li><strong>Add payload size limits</strong> as a blunt but effective mitigation while addressing the underlying blocking code.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> monitor event loop lag as a standing metric (the delay between when a scheduled callback should run and when it actually does) — rising lag gives early warning of a blocking pattern before it becomes a full customer-visible hang.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · Node.js</span>
+  </footer>
+</div>
+</body>
+</html>

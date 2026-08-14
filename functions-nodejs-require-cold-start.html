@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node.js Functions: Diagnosing require() Overhead on Cold Start — trace/log</title>
+<meta name="description" content="A Node.js Function with an unexpectedly slow cold start often traces back to a large dependency tree being required eagerly at the top of the file instead of lazily.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Node.js Functions: Diagnosing require() Overhead on Cold Start — trace/log">
+<meta property="og:description" content="A Node.js Function with an unexpectedly slow cold start often traces back to a large dependency tree being required eagerly at the top of the file instead of lazily.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Node.js Functions: Diagnosing require() Overhead on Cold Start — trace/log">
+<meta name="twitter:description" content="A Node.js Function with an unexpectedly slow cold start often traces back to a large dependency tree being required eagerly at the top of the file instead of lazily.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-nodejs-require-cold-start.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-nodejs-require-cold-start.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Node.js</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Node.js Functions: Diagnosing require() Overhead on Cold Start</h1>
+    <div class="post-meta">
+      <span>Node.js</span>
+      <span>Cold Start</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Node.js Function's cold start is slower than expected given how little the function handler itself actually does. The gap between "function is simple" and "cold start is slow" is the tell — this is a different pattern from the general cold start behavior covered in the <a href="functions-cold-starts.html" style="color:inherit;text-decoration:underline;">main cold start post</a> on this site.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Node.js on Azure Functions, any plan</li>
+      <li>Function file has multiple top-level <code>require()</code>/<code>import</code> statements, some pulling in large SDKs or frameworks</li>
+      <li>Large <code>node_modules</code> tree, possibly with dependencies not actually used by every function in a multi-function app</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Node's module system executes a module's top-level code the first time it's required — including any expensive initialization inside that module. On a cold start, every <code>require()</code> at the top of your entry file runs before your handler code executes, and heavy SDKs (large cloud SDKs, ORMs, bundling many sub-clients) can have meaningful load time.</p>
+    <ul>
+      <li>Add simple timing instrumentation around your top-level requires locally to see which import dominates.</li>
+      <li>Check whether a multi-function app is importing dependencies at the shared module level that only one specific function actually needs — this cost gets paid by every function's cold start, not just the one that uses it.</li>
+    </ul>
+    <div class="code-block">
+      <div class="code-block-label">bash — quick local timing check</div>
+      <pre>node -e "console.time('require'); require('./index.js'); console.timeEnd('require')"</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> slow Node.js cold starts are sometimes attributed generally to "the platform" without checking what's actually happening during module load. Since Node.js is generally fast to start, an unusually slow cold start is a strong signal that something specific in the require graph is the cost, not baseline platform overhead.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Every <code>require()</code> at the top of a Node.js entry file executes synchronously and completely before anything else in that file runs, including the exported handler. Large SDKs that initialize substantial internal state at require time, or a shared module in a multi-function app that imports dependencies not needed by every function using it, both add fixed cost to every cold start regardless of which specific function is actually being invoked.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Move rarely-used, heavy requires inside the function body</strong> so the cost is only paid on invocations that actually need that dependency, not on every cold start.</li>
+      <li><strong>Split shared modules by actual usage</strong> in multi-function apps — avoid one large shared file that every function imports if most functions only need a small piece of it.</li>
+      <li><strong>Import specific submodules rather than entire SDKs</strong> where the SDK supports it (e.g. importing a single AWS/Azure SDK client rather than the full package) to reduce what needs to load.</li>
+      <li><strong>Consider a Premium plan with always-ready instances</strong> if the dependency set is genuinely required and latency is customer-facing — the same trade-off as the Python and .NET cold start posts on this site.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> periodically audit the entry file's top-level requires as dependencies are added over time — it's easy for an initially lean function to accumulate unnecessary eager imports as the codebase grows, especially in multi-function apps sharing common modules.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Node.js</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Storage Access Denied After Disabling Shared Key Access — trace/log</title>
+<meta name="description" content="Disabling Shared Key Access on a Storage Account breaks any App Service still connecting via a legacy AccountKey connection string. Here's how to migrate to Managed Identity and RBAC.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Storage Access Denied After Disabling Shared Key Access — trace/log">
+<meta property="og:description" content="Disabling Shared Key Access on a Storage Account breaks any App Service still connecting via a legacy AccountKey connection string. Here's how to migrate to Managed Identity and RBAC.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Storage Access Denied After Disabling Shared Key Access — trace/log">
+<meta name="twitter:description" content="Disabling Shared Key Access on a Storage Account breaks any App Service still connecting via a legacy AccountKey connection string. Here's how to migrate to Managed Identity and RBAC.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/security-shared-key-access-disabled.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/security-shared-key-access-disabled.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html" class="active">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/security-monitoring.html">Security & Monitoring</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Storage Access Denied After Disabling Shared Key Access</h1>
+    <div class="post-meta">
+      <span>Managed Identity</span>
+      <span>Zero Trust</span>
+      <span>8 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An App Service that was reading and writing Blob or File storage without issue suddenly starts failing every storage call with an authorization or authentication error — often <code>AuthenticationFailed</code> or <code>KeyBasedAuthenticationNotPermitted</code> — right after a security team disables "Allow storage account key access" on the target Storage Account as part of a Zero Trust hardening pass.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>App Service (or any app) connecting to Azure Storage via a connection string containing <code>AccountKey=</code></li>
+      <li>Storage Account recently had <strong>Allow storage account key access</strong> (Shared Key Access) set to Disabled</li>
+      <li>App has not been migrated to identity-based authentication</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>This one is unusually easy to confirm because the cause and effect are directly documented — check whether the Storage Account's <strong>Configuration</strong> blade shows <strong>Allow storage account key access</strong> set to Disabled, and cross-reference the timing against when the failures started. If they line up, you don't need to dig further to confirm the trigger; the remaining work is migrating the app's authentication method.</p>
+    <ul>
+      <li>Confirm the app's current connection string or SDK configuration is using <code>AccountKey=</code> — grep application settings and any connection strings in code or configuration for this pattern.</li>
+      <li>Check whether the app already has a system-assigned or user-assigned managed identity — if not, this is the first thing to add.</li>
+      <li>Confirm what RBAC roles (if any) exist on the Storage Account for that identity — a freshly enabled managed identity has no storage permissions until explicitly granted.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the error can look like a generic permissions or network issue, teams sometimes spend time checking firewall rules or VNet configuration first. If Shared Key Access was recently disabled, that's almost certainly the actual trigger — the fix is authentication method, not network path.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Disabling Shared Key Access on a Storage Account rejects any request authenticated with an account key, regardless of whether that key is technically still valid. This is an intentional Zero Trust control — it eliminates long-lived, broadly-scoped secrets in favor of short-lived Microsoft Entra ID tokens issued to a specific identity with specific, scoped RBAC permissions. Any app still using an <code>AccountKey=</code> connection string breaks immediately and completely once this setting changes, with no gradual degradation.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Enable a managed identity on the App Service</strong> (system-assigned is simplest for a single app) under Identity in the portal.</li>
+      <li><strong>Grant the identity an appropriate RBAC role</strong> on the Storage Account — typically <code>Storage Blob Data Contributor</code> or <code>Storage Blob Data Reader</code> depending on whether the app writes or only reads, scoped to the Storage Account or a specific container.</li>
+      <li><strong>Replace the connection string with identity-based configuration</strong> in application code — most Azure SDKs support this via <code>DefaultAzureCredential</code> (or the language-specific equivalent) instead of a connection string, authenticating as the managed identity automatically when running in Azure.</li>
+      <li><strong>Remove the old connection string</strong> from application settings once the identity-based path is confirmed working, so there's no lingering secret to rotate or leak.</li>
+      <li><strong>Test in a non-production slot first</strong> if using deployment slots — confirm the identity-based path works before cutting over production traffic.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when a security team plans to disable Shared Key Access on a Storage Account, get an inventory of every app connecting to it beforehand — the failure is immediate and total for anything still using an account key, so this is much better handled as a planned migration than discovered as an outage.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Security & Monitoring</span>
+  </footer>
+</div>
+</body>
+</html>

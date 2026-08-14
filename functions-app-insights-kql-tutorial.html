@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setting Up Application Insights and Writing Your First KQL Query — trace/log</title>
+<meta name="description" content="Step-by-step: enable Application Insights on a Function App and write your first KQL query against real request telemetry.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Setting Up Application Insights and Writing Your First KQL Query — trace/log">
+<meta property="og:description" content="Step-by-step: enable Application Insights on a Function App and write your first KQL query against real request telemetry.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Setting Up Application Insights and Writing Your First KQL Query — trace/log">
+<meta name="twitter:description" content="Step-by-step: enable Application Insights on a Function App and write your first KQL query against real request telemetry.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-app-insights-kql-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-app-insights-kql-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Setting Up Application Insights and Writing Your First KQL Query</h1>
+    <div class="post-meta">
+      <span>Beginner</span>
+      <span>Application Insights</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>Every troubleshooting post on this site leans on Application Insights and Kusto Query Language (KQL) to find root cause instead of guessing. If you haven't set this up yet, this walks through it end to end — from enabling the resource to running a real query against your Function App's traffic.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An existing Function App or Web App in Azure</li>
+        <li>Contributor access on the resource group</li>
+        <li>Access to the Azure Portal</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Create or link an Application Insights resource</h4>
+        <p>In the Azure Portal, open your Function App, go to <strong>Settings → Application Insights</strong>, and either enable a new resource in the same region or link an existing one. This is the single most important step — without it, none of the later diagnosis posts on this site are possible for your app.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Confirm telemetry is flowing</h4>
+        <p>Send a few test requests to your app, then open the Application Insights resource and check the <strong>Live Metrics</strong> blade. You should see request counts and server response times updating within a few seconds. If nothing appears after a minute, double check the <code>APPLICATIONINSIGHTS_CONNECTION_STRING</code> app setting is present and correctly formatted.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Open the Logs (Kusto) blade</h4>
+        <p>From the Application Insights resource, select <strong>Logs</strong> in the left nav. This opens the Kusto query editor scoped to your telemetry data. Close any "example queries" popup — you'll write your own in the next step.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Run your first query: recent request volume</h4>
+        <p>Paste the query below and run it. This returns request count and average duration bucketed by 15-minute windows over the last 6 hours — a good first sanity check that data is arriving as expected.</p>
+        <div class="code-block">
+          <div class="code-block-label">KQL — request volume, last 6 hours</div>
+          <pre>requests
+| where timestamp > ago(6h)
+| summarize RequestCount=count(), AvgDurationMs=avg(duration) by bin(timestamp, 15m)
+| order by timestamp desc</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Filter to a specific function or route</h4>
+        <p>Add a <code>where</code> clause on <code>name</code> to scope the query to one endpoint — this is the pattern you'll reuse in nearly every troubleshooting query on this site.</p>
+        <div class="code-block">
+          <div class="code-block-label">KQL — scoped to one function</div>
+          <pre>requests
+| where timestamp > ago(6h)
+| where name == "GET /api/YourFunction"
+| summarize count(), avg(duration), percentile(duration, 95) by bin(timestamp, 15m)</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Pin the query for reuse</h4>
+        <p>Click <strong>Pin to dashboard</strong> in the query editor toolbar. Over time, pin your most-used diagnostic queries (p95 latency, failed request rate, exception count) so a health check takes one glance instead of retyping KQL during an active incident.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> you now have telemetry flowing and a working Logs query. The troubleshooting posts on this site build directly on this setup — for example, the <a href="functions-cold-starts.html" style="color:inherit;text-decoration:underline;">cold start diagnosis</a> post reuses the same query pattern with a duration threshold added.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troubleshooting CORS Errors Between WordPress, Azure CDN/Front Door, and Blob Storage — trace/log</title>
+<meta name="description" content="CORS errors on WordPress assets served via Blob Storage and CDN usually trace back to Storage account CORS rules, not WordPress itself.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Troubleshooting CORS Errors Between WordPress, Azure CDN/Front Door, and Blob Storage — trace/log">
+<meta property="og:description" content="CORS errors on WordPress assets served via Blob Storage and CDN usually trace back to Storage account CORS rules, not WordPress itself.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Troubleshooting CORS Errors Between WordPress, Azure CDN/Front Door, and Blob Storage — trace/log">
+<meta name="twitter:description" content="CORS errors on WordPress assets served via Blob Storage and CDN usually trace back to Storage account CORS rules, not WordPress itself.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-wordpress-cors.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-wordpress-cors.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Troubleshooting CORS Errors Between WordPress, Azure CDN/Front Door, and Blob Storage</h1>
+    <div class="post-meta">
+      <span>WordPress on Linux App Service</span>
+      <span>Azure CDN / Front Door</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>Fonts, images, or other static assets offloaded to Blob Storage and fronted by Azure CDN or Front Door fail to load in the browser. The browser console shows a CORS error such as "No 'Access-Control-Allow-Origin' header is present on the requested resource," even though the assets load fine when accessed directly by URL.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>WordPress hosted on Azure App Service Linux</li>
+      <li>Media/static assets offloaded to Azure Blob Storage for performance</li>
+      <li>Azure CDN or Azure Front Door sitting in front of Blob Storage and/or the App Service origin</li>
+      <li>WordPress theme or plugin loading fonts or assets cross-origin (e.g. from a CDN subdomain different from the main site domain)</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Open browser dev tools and check the failing request's response headers, not just the console error. The key thing to confirm is whether <code>Access-Control-Allow-Origin</code> is present at all, and if so, whether it matches the requesting origin exactly.</p>
+
+    <ul>
+      <li>Test the asset URL directly in a new tab — if it loads fine there but fails when loaded by the page's JavaScript or CSS, that confirms it's specifically a cross-origin browser restriction, not a broken link.</li>
+      <li>Check whether CORS rules are configured on the Blob Storage account itself (Storage account → Resource sharing (CORS)) — this is a separate setting from anything in WordPress or App Service.</li>
+      <li>If a CDN or Front Door sits in front of Blob Storage, confirm it isn't caching a stale response that was captured <em>before</em> CORS headers were added, or stripping headers during caching.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams often add CORS headers at the WordPress/App Service level (e.g. via <code>.htaccess</code> or a plugin) when the request never actually reaches App Service — it's served entirely from Blob Storage or the CDN edge, so the fix has to happen at that layer instead.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>CORS headers must be set at the layer that actually serves the response to the browser. When assets are offloaded to Blob Storage and served via CDN, that means the Storage account's CORS rules (and possibly CDN caching behavior) — not WordPress — control whether the browser accepts the cross-origin response. A missing or overly narrow CORS rule on the Storage account, or a cached response from before CORS was configured, are the two most common causes.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Configure Storage account CORS:</strong> in the Storage account, add a CORS rule permitting the origins that need to load the assets (your WordPress domain, and any CDN endpoint domain in use), with the HTTP methods actually used (typically GET, HEAD).</li>
+      <li><strong>Purge the CDN cache:</strong> after updating CORS rules, purge cached responses for the affected paths so the CDN re-fetches from origin with the new headers rather than serving a stale cached copy.</li>
+      <li><strong>Be specific with allowed origins:</strong> avoid wildcarding <code>*</code> for allowed origins if the assets include anything sensitive; list the actual domains that need access.</li>
+      <li><strong>Check Front Door rules separately:</strong> if using Front Door, confirm it isn't rewriting or stripping the <code>Origin</code> or CORS response headers in a rules engine configuration.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when first setting up asset offloading to Blob Storage or CDN, add the CORS rule as part of the initial setup checklist rather than after the fact — it's easy to forget because the assets "work" (load directly) right up until a browser enforces cross-origin restrictions.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

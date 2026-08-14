@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Troubleshooting HTTP 409s When Deploying to App Service — trace/log</title>
+<meta name="description" content="A 503 from Kudu during deployment that manifests as an HTTP 409 in your pipeline is almost always two deployments racing against Kudu's single deployment lock.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Troubleshooting HTTP 409s When Deploying to App Service — trace/log">
+<meta property="og:description" content="A 503 from Kudu during deployment that manifests as an HTTP 409 in your pipeline is almost always two deployments racing against Kudu's single deployment lock.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Troubleshooting HTTP 409s When Deploying to App Service — trace/log">
+<meta name="twitter:description" content="A 503 from Kudu during deployment that manifests as an HTTP 409 in your pipeline is almost always two deployments racing against Kudu's single deployment lock.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-http-409-deployment.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-http-409-deployment.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-3">SEV-3 · TROUBLESHOOTING</span></div>
+    <h1>Troubleshooting HTTP 409s When Deploying to App Service</h1>
+    <div class="post-meta">
+      <span>Kudu</span>
+      <span>CI/CD</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A deployment pipeline (Azure DevOps, GitHub Actions, or a direct CLI deploy) fails with a 409 Conflict, or the deployment task reports a 503 from the remote server. It's intermittent — the same pipeline configuration sometimes succeeds and sometimes fails, often correlating with how frequently deployments are triggered.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>App Service (Windows or Linux), deployed via Kudu's deployment API (ZipDeploy, MSDeploy, or similar)</li>
+      <li>CI/CD pipeline that can trigger overlapping deployments — parallel pipeline runs, rapid successive commits, or multiple deployment slots deploying near-simultaneously</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Kudu does not support concurrent deployments to the same app — it creates a lock file during a deployment specifically to prevent two deployments from corrupting each other's state. A second deployment arriving while one is already in progress gets rejected, which surfaces in your pipeline as a 409 or a 503 depending on exactly when it hits the lock.</p>
+    <ul>
+      <li>Check whether your pipeline can trigger multiple runs concurrently — for example, two commits pushed close together both kicking off a deploy stage without queuing.</li>
+      <li>Check Kudu's deployment log (<code>https://&lt;app&gt;.scm.azurewebsites.net/api/deployments</code>) for overlapping timestamps between a failed deployment and one that was in progress.</li>
+      <li>If deployments are failing consistently rather than intermittently, also check whether high memory usage on the instance is causing the Kudu container itself to fail to start — a different cause with the same symptom.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> an intermittent 409/503 during deployment is sometimes reported as "Azure DevOps is flaky" or "the App Service is unreliable." In the large majority of cases it's a straightforward concurrency conflict at the Kudu deployment lock, not a platform reliability issue.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Kudu serializes deployments using a lock file to avoid inconsistent state from two deployments writing to the same app simultaneously. Pipelines that allow concurrent runs — whether from parallel triggers, rapid successive pushes without queuing, or multiple slots deploying near-simultaneously — will occasionally have two deployments overlap, and the second one hits the lock and fails.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Enforce serial deployment in your pipeline.</strong> Most CI/CD platforms support limiting concurrency per environment/stage (e.g. a deployment queue or concurrency group) — configure this so overlapping runs queue instead of racing.</li>
+      <li><strong>Add retry logic with backoff</strong> to the deployment step itself, so a transient lock conflict from a near-simultaneous deployment resolves automatically on retry rather than failing the whole pipeline run.</li>
+      <li><strong>If using deployment slots,</strong> stagger deployments to different slots rather than triggering them at the exact same time, even though they're technically independent app instances sharing the same Kudu deployment infrastructure pattern.</li>
+      <li><strong>Rule out the memory-related cause separately</strong> — if Kudu itself is failing to start due to high memory on the instance, that needs a different fix (scaling, or addressing the memory pressure) rather than pipeline concurrency changes.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> configure your CI/CD platform's built-in concurrency controls for deployment stages from the start, rather than discovering the lock conflict the first time two team members deploy close together.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

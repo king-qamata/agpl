@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Functions — trace/log</title>
+<meta name="description" content="Azure Functions troubleshooting and tutorials: cold starts, triggers and bindings, Application Insights, KQL, and CLI deployment.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Functions — trace/log">
+<meta property="og:description" content="Azure Functions troubleshooting and tutorials: cold starts, triggers and bindings, Application Insights, KQL, and CLI deployment.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Functions — trace/log">
+<meta name="twitter:description" content="Azure Functions troubleshooting and tutorials: cold starts, triggers and bindings, Application Insights, KQL, and CLI deployment.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/domains/functions.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/domains/functions.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="web-apps.html">Web Apps</a>
+      <a href="functions.html" class="active">Functions</a>
+      <a href="container-apps.html">Container Apps</a>
+      <a href="static-web-apps.html">Static Web Apps</a>
+      <a href="security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span><span class="current">Functions</span>
+  </div>
+
+  <div class="page-intro">
+    <span class="page-tag">DOMAIN 02 · SERVERLESS COMPUTING</span>
+    <h1>Functions</h1>
+    <p>Triggers and bindings, execution models, cold start and concurrency behavior, and debugging with Application Insights, Serilog, and OpenTelemetry. Plus language-specific cold start behavior for .NET, Python, Node.js, and Java.</p>
+  </div>
+
+  <div class="section-label"><span class="idx">01</span> Troubleshooting <span class="count">(4)</span></div>
+  <div class="queue">
+    <a href="../posts/functions-cold-starts.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Diagnosing Cold Start Failures in Consumption Plan Functions</div>
+        <div class="ticket-meta">8 min read · Application Insights · KQL</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-missing-bindings.html" class="ticket">
+      <span class="sev sev-2">SEV-2</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Function Fails Silently: Diagnosing Missing or Misconfigured Bindings</div>
+        <div class="ticket-meta">7 min read · Triggers & Bindings</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-storage-keys-disabled.html" class="ticket">
+      <span class="sev sev-1">SEV-1</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Function App Won't Start After Disabling Storage Account Keys</div>
+        <div class="ticket-meta">8 min read · AzureWebJobsStorage · Managed Identity</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-blob-trigger-latency.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Blob Trigger Taking Minutes to Fire: Switching to Event Grid-Based Triggering</div>
+        <div class="ticket-meta">7 min read · Blob Trigger · Event Grid</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <div class="section-label"><span class="idx">02</span> By Language <span class="count">(4)</span></div>
+  <div class="queue">
+    <a href="../posts/functions-dotnet-isolated-cold-start.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">.NET Isolated Worker Cold Starts: Why They're Slower Than In-Process</div>
+        <div class="ticket-meta">7 min read · .NET Isolated · Cold Start</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-python-import-cold-start.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Python Functions: Diagnosing Slow Cold Starts from Heavy Package Imports</div>
+        <div class="ticket-meta">6 min read · Python · Cold Start</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-nodejs-require-cold-start.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Node.js Functions: Diagnosing require() Overhead on Cold Start</div>
+        <div class="ticket-meta">6 min read · Node.js · Cold Start</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-java-jvm-cold-start.html" class="ticket">
+      <span class="sev sev-3">SEV-3</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Java Functions: Diagnosing JVM Warm-Up Time on Cold Start</div>
+        <div class="ticket-meta">6 min read · Java · Cold Start</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <div class="section-label"><span class="idx">03</span> Tutorials <span class="count">(4)</span></div>
+  <div class="queue">
+    <a href="../posts/functions-cli-deployment-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Deploying Your First Azure Function with the Azure CLI</div>
+        <div class="ticket-meta">6 min read · Step-by-step · Beginner</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-app-insights-kql-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Setting Up Application Insights and Writing Your First KQL Query</div>
+        <div class="ticket-meta">7 min read · Step-by-step · Beginner</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-blob-trigger-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Blob Trigger and Bindings Walkthrough, Start to Finish</div>
+        <div class="ticket-meta">7 min read · Step-by-step · Beginner</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+    <a href="../posts/functions-event-grid-blob-trigger-tutorial.html" class="ticket">
+      <span class="sev sev-tut">TUTORIAL</span>
+      <div class="ticket-body">
+        <div class="ticket-title">Setting Up an Event Grid-Based Blob Trigger, Start to Finish</div>
+        <div class="ticket-meta">8 min read · Step-by-step · Intermediate</div>
+      </div>
+      <span class="ticket-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions</span>
+  </footer>
+
+</div>
+</body>
+</html>

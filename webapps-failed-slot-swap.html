@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Failed Slot Swap: Diagnosing "Cannot Swap Site Slots" Errors — trace/log</title>
+<meta name="description" content="A deployment slot swap that fails outright usually means the target slot never passed its own startup health check, not a transient platform failure.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Failed Slot Swap: Diagnosing &quot;Cannot Swap Site Slots&quot; Errors — trace/log">
+<meta property="og:description" content="A deployment slot swap that fails outright usually means the target slot never passed its own startup health check, not a transient platform failure.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Failed Slot Swap: Diagnosing &quot;Cannot Swap Site Slots&quot; Errors — trace/log">
+<meta name="twitter:description" content="A deployment slot swap that fails outright usually means the target slot never passed its own startup health check, not a transient platform failure.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-failed-slot-swap.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-failed-slot-swap.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Failed Slot Swap: Diagnosing "Cannot Swap Site Slots" Errors</h1>
+    <div class="post-meta">
+      <span>Deployment Slots</span>
+      <span>App Service Linux</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A slot swap (staging → production, or between any two named slots) fails outright with an error like "Cannot swap site slots for site '&lt;app&gt;' because the operation timed out" or a generic swap failure, rather than completing. The staging slot may look fine when browsed directly.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>App Service Linux (or Windows) using deployment slots</li>
+      <li>Swap initiated via portal, Azure CLI, or a CI/CD pipeline step</li>
+      <li>App may have custom startup logic, warm-up requests, or App Settings that differ between slots</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>A swap isn't just a DNS-style pointer flip — Azure first triggers the target slot's application to restart with the swapped configuration and waits for it to report healthy before completing. If the app doesn't come up cleanly under that specific condition, the swap fails rather than proceeding with a broken app in production.</p>
+    <ul>
+      <li><strong>Check for slot-specific settings incorrectly marked "slot sticky."</strong> A setting that should swap (like a feature flag) but is marked sticky won't move with the swap, potentially causing the app to start with unexpected configuration in its new slot.</li>
+      <li><strong>Look at what actually differs between slots</strong> beyond just application settings — connection strings, WEBSITE_RUN_FROM_PACKAGE, or any environment-specific value that could cause the app to fail its startup check under the "swapped" configuration specifically.</li>
+      <li><strong>Check Kudu/Log Stream for the target slot during the swap window</strong> — the swap operation itself triggers a restart, and if the app crashes or times out on startup in that moment, that's the actual failure, surfaced by the platform as a generic swap error.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a failed swap is often retried repeatedly assuming it's a transient platform issue. If the same swap fails consistently, the app itself is failing its post-swap health check — retrying without investigating the app's behavior under swapped configuration won't help.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Azure performs a swap by applying the target slot's configuration to the app and waiting for it to restart successfully — this is what "warm-up" during a swap actually verifies. If the app fails to start cleanly under the post-swap configuration (a missing setting, a connection string pointing somewhere unreachable, a slot-sticky setting that should have swapped but didn't), the health check fails and Azure aborts the swap rather than completing it against a broken app.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Audit slot-sticky settings</strong> — confirm only genuinely environment-specific values (like a slot's own connection string) are marked sticky, and everything else is allowed to swap normally.</li>
+      <li><strong>Test the exact post-swap configuration in staging first</strong> — apply what would be the swapped configuration to the staging slot directly and confirm the app starts cleanly before attempting the real swap.</li>
+      <li><strong>Add or check swap warm-up settings</strong> (<code>applicationInitialization</code> configuration) to ensure the platform waits long enough and hits the right warm-up path before deciding the app is healthy.</li>
+      <li><strong>Review Kudu logs from the failed swap window specifically</strong>, not just general application logs, to see what the app was doing at the moment the swap was attempted.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> before relying on slot swaps for zero-downtime deployments, explicitly test what happens when staging is swapped with production's exact configuration differences — don't assume "it works when I browse staging directly" is equivalent to "it will pass its swap health check."</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>
