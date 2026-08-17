@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deploying a Container Instance into a Virtual Network — trace/log</title>
+<meta name="description" content="Step-by-step: deploy Azure Container Instances into a delegated VNet subnet so the container can reach private resources without a public IP.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Deploying a Container Instance into a Virtual Network — trace/log">
+<meta property="og:description" content="Step-by-step: deploy Azure Container Instances into a delegated VNet subnet so the container can reach private resources without a public IP.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploying a Container Instance into a Virtual Network — trace/log">
+<meta name="twitter:description" content="Step-by-step: deploy Azure Container Instances into a delegated VNet subnet so the container can reach private resources without a public IP.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/aci-vnet-deployment-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/aci-vnet-deployment-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Tutorial · ACI</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Deploying a Container Instance into a Virtual Network</h1>
+    <div class="post-meta">
+      <span>ACI</span>
+      <span>VNet</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>By default, Azure Container Instances get a public IP and no private network access. If a container needs to reach a database, storage account, or another resource that's locked to private networking, it needs to run inside a VNet — this walks through that specific deployment shape, as covered in the <a href="containerapps-aci-vs-webapp-vs-aca.html" style="color:inherit;text-decoration:underline;">ACI vs Web App vs ACA decision guide</a> on this site.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An existing VNet with an available address space for a new subnet</li>
+        <li>Azure CLI signed in</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Create a dedicated subnet for container groups</h4>
+        <p>ACI requires its own delegated subnet — it can't share a subnet with other resource types like VMs. Create one sized for how many container groups you expect to run concurrently.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>az network vnet subnet create \
+  --resource-group rg-myapp \
+  --vnet-name my-vnet \
+  --name aci-subnet \
+  --address-prefixes 10.0.1.0/24 \
+  --delegations Microsoft.ContainerInstance/containerGroups</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Deploy the container group into the subnet</h4>
+        <p>Reference the VNet and subnet directly in the container group creation call — this is what removes the public IP and places the container's networking inside your VNet instead.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>az container create \
+  --resource-group rg-myapp \
+  --name my-private-container \
+  --image myregistry.azurecr.io/myapp:latest \
+  --vnet my-vnet \
+  --subnet aci-subnet \
+  --cpu 1 --memory 1.5</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Confirm there's no public IP</h4>
+        <p>A VNet-deployed container group has only a private IP within the subnet — verify this rather than assuming, since a misconfigured deployment can silently fall back to public networking in some scenarios.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>az container show --resource-group rg-myapp --name my-private-container --query ipAddress</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Test reachability from inside the VNet</h4>
+        <p>From another resource in the same VNet (a VM, or a different container group in the same or a peered subnet), confirm you can reach the private container on its exposed port — this is the actual proof the networking is set up correctly, not just the absence of a public IP.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Add DNS if needed</h4>
+        <p>Unlike public ACI deployments, a VNet-deployed container group doesn't get a public DNS name — if other resources need to reach it by name rather than IP, add a Private DNS Zone record pointing at its private IP.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> a container group reachable only from within your VNet — no public exposure, and able to reach other private resources on the same network, which is the main reason to choose this deployment shape over a plain public ACI container.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Azure Container Instances · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

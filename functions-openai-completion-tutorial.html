@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adding Azure OpenAI Text Completion to an Azure Function — trace/log</title>
+<meta name="description" content="Step-by-step: wire an HTTP-triggered Function up to Azure OpenAI using Managed Identity, avoiding a hardcoded API key while keeping the integration simple.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Adding Azure OpenAI Text Completion to an Azure Function — trace/log">
+<meta property="og:description" content="Step-by-step: wire an HTTP-triggered Function up to Azure OpenAI using Managed Identity, avoiding a hardcoded API key while keeping the integration simple.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Adding Azure OpenAI Text Completion to an Azure Function — trace/log">
+<meta name="twitter:description" content="Step-by-step: wire an HTTP-triggered Function up to Azure OpenAI using Managed Identity, avoiding a hardcoded API key while keeping the integration simple.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-openai-completion-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-openai-completion-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Adding Azure OpenAI Text Completion to an Azure Function</h1>
+    <div class="post-meta">
+      <span>Intermediate</span>
+      <span>Azure OpenAI</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>A common pattern is a Function that takes a request, calls Azure OpenAI for a completion, and returns the result — useful as a backend for a chat feature, a summarization endpoint, or as one tool in a larger agent setup like the <a href="functions-mcp-server-tutorial.html" style="color:inherit;text-decoration:underline;">MCP server tutorial</a> on this site. This covers doing it with Managed Identity rather than an API key sitting in application settings.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An Azure OpenAI resource with a model deployment (e.g. GPT-4o)</li>
+        <li>An existing HTTP-triggered Function App</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Enable a managed identity on the Function App</h4>
+        <p>Same pattern as the storage identity posts on this site — go to <strong>Identity</strong> and enable a system-assigned identity.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Grant the identity access to Azure OpenAI</h4>
+        <p>On the Azure OpenAI resource, assign the <code>Cognitive Services OpenAI User</code> role to the Function App's identity, scoped to that resource.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>az role assignment create \
+  --assignee &lt;function-app-identity-principal-id&gt; \
+  --role "Cognitive Services OpenAI User" \
+  --scope /subscriptions/&lt;sub&gt;/resourceGroups/&lt;rg&gt;/providers/Microsoft.CognitiveServices/accounts/&lt;openai-resource&gt;</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Add the OpenAI endpoint as an app setting</h4>
+        <p>Store the resource endpoint (not a key) as configuration — this is safe to keep as a plain app setting since it's not a secret on its own.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>az functionapp config appsettings set \
+  --name my-function-app \
+  --resource-group rg-myapp \
+  --settings AZURE_OPENAI_ENDPOINT="https://my-openai-resource.openai.azure.com/"</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Call Azure OpenAI using identity-based auth</h4>
+        <p>Use the Azure Identity SDK's credential type together with the OpenAI SDK, rather than passing an API key — the SDK obtains a token via the function's managed identity automatically.</p>
+        <div class="code-block">
+          <div class="code-block-label">Python — identity-based client</div>
+          <pre>from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+from openai import AzureOpenAI
+
+credential = DefaultAzureCredential()
+token_provider = get_bearer_token_provider(
+    credential, "https://cognitiveservices.azure.com/.default"
+)
+
+client = AzureOpenAI(
+    azure_endpoint=os.environ["AZURE_OPENAI_ENDPOINT"],
+    azure_ad_token_provider=token_provider,
+    api_version="2024-06-01",
+)</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Wire it into an HTTP trigger</h4>
+        <p>Accept a prompt from the request body, call the completion endpoint, and return the result — straightforward once the identity-based client is set up.</p>
+        <div class="code-block">
+          <div class="code-block-label">Python — handler</div>
+          <pre>response = client.chat.completions.create(
+    model="gpt-4o-deployment-name",
+    messages=[{"role": "user", "content": prompt}],
+)
+return response.choices[0].message.content</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Add timeout and error handling</h4>
+        <p>Model calls can be slower than typical function work — set an appropriate function timeout, and handle rate-limit or transient errors from the OpenAI endpoint explicitly rather than letting them surface as unhandled exceptions.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> a Function calling Azure OpenAI with no API key in configuration anywhere — consistent with the Managed Identity pattern used throughout the Security & Monitoring posts on this site, now applied to an AI integration instead of storage.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>
