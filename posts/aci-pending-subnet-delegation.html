@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACI Container Group Stuck in Pending: Diagnosing Subnet Delegation Issues — trace/log</title>
+<meta name="description" content="A VNet-deployed Container Instance stuck in Pending almost always means the target subnet isn't correctly delegated to Microsoft.ContainerInstance/containerGroups, or has no free addresses.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="ACI Container Group Stuck in Pending: Diagnosing Subnet Delegation Issues — trace/log">
+<meta property="og:description" content="A VNet-deployed Container Instance stuck in Pending almost always means the target subnet isn't correctly delegated to Microsoft.ContainerInstance/containerGroups, or has no free addresses.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ACI Container Group Stuck in Pending: Diagnosing Subnet Delegation Issues — trace/log">
+<meta name="twitter:description" content="A VNet-deployed Container Instance stuck in Pending almost always means the target subnet isn't correctly delegated to Microsoft.ContainerInstance/containerGroups, or has no free addresses.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/aci-pending-subnet-delegation.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/aci-pending-subnet-delegation.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · ACI</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>ACI Container Group Stuck in Pending: Diagnosing Subnet Delegation Issues</h1>
+    <div class="post-meta">
+      <span>ACI</span>
+      <span>VNet</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A container group deployed with <code>--vnet</code>/<code>--subnet</code> stays in <strong>Pending</strong> state indefinitely, never transitioning to Running. There's often no detailed error in the portal beyond the stuck state itself.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Instances deployed into an existing VNet subnet, following the pattern in the <a href="aci-vnet-deployment-tutorial.html" style="color:inherit;text-decoration:underline;">VNet deployment tutorial</a> on this site</li>
+      <li>Subnet may be shared, recently created, or reused from another purpose</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Two specific subnet conditions account for the large majority of stuck-Pending ACI deployments:</p>
+    <ul>
+      <li><strong>Missing or incorrect delegation.</strong> The subnet must be delegated specifically to <code>Microsoft.ContainerInstance/containerGroups</code> — check this on the subnet's configuration, not just that a delegation exists (a delegation to a different service doesn't work).</li>
+      <li><strong>No available IP addresses.</strong> ACI consumes a private IP per container group from the subnet's address range — a small subnet that's already hosting other resources or previous container groups can run out of free addresses, silently blocking new deployments from ever provisioning.</li>
+    </ul>
+    <div class="code-block">
+      <div class="code-block-label">bash — check subnet delegation</div>
+      <pre>az network vnet subnet show \
+  --resource-group rg-myapp \
+  --vnet-name my-vnet \
+  --name aci-subnet \
+  --query delegations</pre>
+    </div>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a stuck Pending deployment is sometimes retried repeatedly assuming it's a transient platform issue. If the subnet's delegation or address space is the actual blocker, retrying the same deployment will fail the same way indefinitely — the fix has to happen at the subnet level.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Container groups deployed into a VNet require a subnet dedicated to ACI via explicit delegation — this reserves the subnet specifically for container group networking rather than general-purpose VM or other resource use. Without correct delegation, or without free address space in that subnet, ACI can't complete the networking setup needed to bring the container group to a running state, and it stalls in Pending rather than failing with an immediately obvious error.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Add or correct the delegation</strong> on the target subnet to <code>Microsoft.ContainerInstance/containerGroups</code> if missing or set to the wrong service.</li>
+      <li><strong>Check subnet size against actual usage</strong> — if the subnet is small (e.g. a /28) and already has other resources or container groups using addresses, either expand the subnet or move to a dedicated, appropriately sized one.</li>
+      <li><strong>Use a subnet dedicated solely to ACI</strong> rather than sharing it with other resource types, both to avoid delegation conflicts and to make capacity planning simpler.</li>
+      <li><strong>Delete and redeploy</strong> the stuck container group after fixing the subnet — a Pending deployment generally doesn't self-recover once the underlying subnet issue is fixed; it needs a fresh deployment attempt.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> size the ACI subnet with real headroom above your expected concurrent container group count, and keep it dedicated to ACI only — this avoids both the delegation conflict and the address exhaustion versions of this problem before they happen.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Azure Container Instances</span>
+  </footer>
+</div>
+</body>
+</html>
