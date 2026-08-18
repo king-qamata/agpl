@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Key Vault Reference Shows "#REF!" in App Configuration — trace/log</title>
+<meta name="description" content="An app setting using a Key Vault reference that shows as an unresolved error instead of the secret value almost always means the app's identity lacks access, not a broken reference syntax.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Key Vault Reference Shows &quot;#REF!&quot; in App Configuration — trace/log">
+<meta property="og:description" content="An app setting using a Key Vault reference that shows as an unresolved error instead of the secret value almost always means the app's identity lacks access, not a broken reference syntax.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Key Vault Reference Shows &quot;#REF!&quot; in App Configuration — trace/log">
+<meta name="twitter:description" content="An app setting using a Key Vault reference that shows as an unresolved error instead of the secret value almost always means the app's identity lacks access, not a broken reference syntax.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/security-keyvault-reference-error.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/security-keyvault-reference-error.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html" class="active">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/security-monitoring.html">Security & Monitoring</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Key Vault Reference Shows "#REF!" in App Configuration</h1>
+    <div class="post-meta">
+      <span>Key Vault</span>
+      <span>Managed Identity</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An application setting configured as a Key Vault reference (<code>@Microsoft.KeyVault(...)</code>) shows <code>#REF!</code> in the portal instead of resolving to the actual secret value, or resolving silently but the app fails at runtime trying to read what's effectively an empty or error string instead of the expected secret.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>App Service or Function App with an application setting using Key Vault reference syntax</li>
+      <li>Key Vault access configured via either RBAC or a legacy access policy</li>
+      <li>Recently added the reference, or recently changed the Key Vault's permission model</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p><code>#REF!</code> specifically means the platform tried to resolve the reference and failed — this is different from a setting that's simply missing or misspelled, which would show as literal text instead. Work through the resolution chain:</p>
+    <ul>
+      <li><strong>Confirm the app has a managed identity</strong> enabled — Key Vault references resolve using the app's own identity, not a shared credential.</li>
+      <li><strong>Check the Key Vault's permission model</strong> — Key Vault supports both legacy access policies and Azure RBAC; confirm which one is active and that the app's identity has a grant under whichever model is actually enabled. A permission granted under the wrong model (e.g. an access policy on a vault now using RBAC) has no effect.</li>
+      <li><strong>Verify the reference syntax itself</strong> — confirm the vault name, secret name, and optional version in the reference string exactly match what exists in the vault.</li>
+      <li><strong>Check Key Vault's own network restrictions</strong> — if the vault has Private Endpoint-only access or firewall rules, confirm the app can actually reach it; this manifests the same as a permissions failure from the app's perspective.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the syntax "looks right," teams sometimes assume the reference itself must be malformed and spend time tweaking the string. If the vault name and secret name are correct, the far more common cause is a permissions or network gap between the app's identity and the vault, not a syntax problem.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Key Vault references are resolved server-side using the app's managed identity to fetch the secret at runtime — the app never sees a literal secret value in its configuration, only the reference. If that identity lacks a role or access policy grant on the vault (or under the wrong permission model relative to what the vault actually enforces), or can't reach the vault over the network, resolution fails and the platform surfaces that as <code>#REF!</code> rather than the resolved value.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Enable a managed identity</strong> on the app if not already present.</li>
+      <li><strong>Grant the correct permission for the vault's actual model:</strong> an RBAC role like <code>Key Vault Secrets User</code> if the vault uses Azure RBAC, or a <code>get</code> permission via an access policy if it's still on the legacy model.</li>
+      <li><strong>If the vault restricts network access,</strong> ensure the app can reach it — via VNet integration and a Private Endpoint if the vault is locked to private networking, following the same pattern as the storage-focused Managed Identity posts on this site.</li>
+      <li><strong>Re-save the app setting</strong> after fixing permissions — resolution sometimes needs a trigger to retry rather than resolving automatically the moment access is granted.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when migrating a Key Vault from access policies to RBAC (or vice versa), audit every app identity that references secrets in that vault as part of the migration — a permission model switch silently breaks any reference relying on the old model's grants.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Security & Monitoring</span>
+  </footer>
+</div>
+</body>
+</html>

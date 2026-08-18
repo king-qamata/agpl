@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deploying Next.js to Static Web Apps: Static Export vs Hybrid Rendering Limits — trace/log</title>
+<meta name="description" content="Next.js features that need a Node.js server — API routes, SSR, ISR — don't work under SWA's static export mode, and the failure often looks like a build success with a broken deploy.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Deploying Next.js to Static Web Apps: Static Export vs Hybrid Rendering Limits — trace/log">
+<meta property="og:description" content="Next.js features that need a Node.js server — API routes, SSR, ISR — don't work under SWA's static export mode, and the failure often looks like a build success with a broken deploy.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploying Next.js to Static Web Apps: Static Export vs Hybrid Rendering Limits — trace/log">
+<meta name="twitter:description" content="Next.js features that need a Node.js server — API routes, SSR, ISR — don't work under SWA's static export mode, and the failure often looks like a build success with a broken deploy.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/swa-nextjs-static-export.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/swa-nextjs-static-export.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html" class="active">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/static-web-apps.html">Static Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Next.js</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Deploying Next.js to Static Web Apps: Static Export vs Hybrid Rendering Limits</h1>
+    <div class="post-meta">
+      <span>Next.js</span>
+      <span>SSR / ISR</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Next.js app deploys successfully to Static Web Apps, but specific pages or features don't work as expected in production — API routes return 404, pages that should update per-request show stale content, or dynamic routes relying on server-side data fetching render empty. The same app works fully in local development.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Next.js app using API routes, Server-Side Rendering (SSR), or Incremental Static Regeneration (ISR)</li>
+      <li>Deployed to Static Web Apps, which is fundamentally a static hosting platform plus a separate managed Functions API</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Check which specific Next.js features are in use and cross-reference against what SWA's build preset actually supports. Static Web Apps' Next.js support is built around <strong>static export</strong> — pages that can be fully pre-rendered at build time. Features that require a persistent Node.js server process at request time (traditional SSR, ISR with revalidation, API routes as Next.js defines them) don't have an equivalent in a purely static deployment, even though the Next.js build itself may complete without error.</p>
+    <ul>
+      <li>Confirm whether the SWA build configuration is using static export mode, and whether your app's routes are compatible with that (no <code>getServerSideProps</code>, no revalidating ISR).</li>
+      <li>Check whether "API routes" in your app were expected to run as Next.js API routes specifically, versus being redirected to work as SWA's own linked Azure Functions API — these are different mechanisms with different code.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> a successful build is often taken as confirmation the deployment will work fully in production. Static export can succeed at build time while silently dropping server-dependent behavior — the build doesn't fail, the feature just doesn't function the way it did with a real Node.js server behind it.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Static Web Apps' core hosting model serves pre-built static files plus a separate Functions-based API — it isn't a general-purpose Node.js server host. Next.js features that assume a persistent server process handling each request (SSR, ISR revalidation, native API routes) don't map onto that model directly. Static export mode works because it moves all rendering to build time, but that means anything requiring per-request server logic has to be redesigned around SWA's actual architecture, not just deployed as-is.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Convert server-side data fetching to static generation</strong> where possible — <code>getStaticProps</code> instead of <code>getServerSideProps</code>, accepting that data is fixed at build time rather than live per request.</li>
+      <li><strong>Move genuine API logic to SWA's linked Functions API</strong> explicitly, rather than relying on Next.js's own API routes convention, since that's the mechanism SWA actually supports for backend logic.</li>
+      <li><strong>Rebuild and redeploy on a schedule or on content change</strong> as a substitute for ISR if content needs to refresh periodically — this trades true revalidation for a build-triggered refresh instead.</li>
+      <li><strong>If the app genuinely needs full SSR,</strong> reconsider whether SWA is the right host — Web App for Containers or a Node.js-capable App Service plan supports a real Next.js server process directly, which may be a better fit than working around SWA's static model.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> decide on static export versus a server-hosting platform before building out Next.js-specific server features — retrofitting an SSR-heavy app onto SWA's static model after the fact is significantly more work than choosing the right hosting target from the start.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Static Web Apps · Next.js</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Environment Variables Not Working in React on Static Web Apps: the Build-Time Trap — trace/log</title>
+<meta name="description" content="Changing an application setting in the SWA portal doesn't update a React app's environment variables, because Create React App and Vite bake them into the bundle at build time.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Environment Variables Not Working in React on Static Web Apps: the Build-Time Trap — trace/log">
+<meta property="og:description" content="Changing an application setting in the SWA portal doesn't update a React app's environment variables, because Create React App and Vite bake them into the bundle at build time.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Environment Variables Not Working in React on Static Web Apps: the Build-Time Trap — trace/log">
+<meta name="twitter:description" content="Changing an application setting in the SWA portal doesn't update a React app's environment variables, because Create React App and Vite bake them into the bundle at build time.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/swa-react-env-vars.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/swa-react-env-vars.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html" class="active">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/static-web-apps.html">Static Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · React</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Environment Variables Not Working in React on Static Web Apps: the Build-Time Trap</h1>
+    <div class="post-meta">
+      <span>React</span>
+      <span>Vite / CRA</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An application setting is added or changed in the Static Web App's Configuration blade — an API URL, a feature flag — but the deployed React app keeps using the old value, or shows the variable as <code>undefined</code> entirely. Restarting or re-visiting the site doesn't help.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>React app built with Create React App or Vite, deployed via the Static Web Apps GitHub Actions workflow</li>
+      <li>Environment variable referenced in code as <code>process.env.REACT_APP_*</code> (CRA) or <code>import.meta.env.VITE_*</code> (Vite)</li>
+      <li>Value set as an Application Setting in the SWA resource's Configuration</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Static Web Apps' Application Settings are runtime configuration for the managed Functions API backend — they are not automatically injected into the static frontend bundle. A React app is fully built and bundled during the CI/CD workflow, before it ever reaches Azure, so anything the frontend reads via <code>process.env</code> or <code>import.meta.env</code> has to already be present at that build step.</p>
+    <ul>
+      <li>Check whether the variable is prefixed correctly for your build tool — CRA only exposes variables prefixed <code>REACT_APP_</code>, Vite only exposes ones prefixed <code>VITE_</code>; anything else is silently excluded from the bundle.</li>
+      <li>Check where the value is actually being set — an SWA Application Setting is invisible to the frontend build unless it's also passed into the GitHub Actions build step as a build-time environment variable.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because Application Settings work as expected for the linked Functions API, it's easy to assume the same mechanism applies to the static frontend. The frontend and the API have fundamentally different configuration models — one is compiled in ahead of time, the other reads environment variables at request time.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>CRA and Vite both replace environment variable references with their literal values at build time — this is a static text substitution baked into the JavaScript bundle, not a runtime lookup. Once built, there's no code path left that reads an actual environment variable; the value is just a string in the compiled bundle. Changing an Azure Application Setting after the fact has no effect because the build already happened and the resulting static files don't reference the environment at all.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Pass the value into the build step</strong> in your GitHub Actions workflow YAML as an environment variable available during the <code>npm run build</code> step, sourced from a GitHub Actions secret or variable rather than an Azure Application Setting.</li>
+      <li><strong>Rebuild and redeploy</strong> any time the value needs to change — there's no way to update a build-time-baked value without re-running the build.</li>
+      <li><strong>If the value genuinely needs to change without a rebuild</strong> (e.g. differs per environment without redeploying), fetch it at runtime from the linked API instead of baking it into the frontend bundle — the API layer can read Application Settings normally since it runs as an actual server-side process.</li>
+      <li><strong>Double-check the variable prefix</strong> matches your build tool's requirement exactly — a missing <code>REACT_APP_</code>/<code>VITE_</code> prefix is a common and easy-to-miss mistake distinct from the build-time/runtime issue itself.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> document clearly, for anyone working on the frontend, which config values are build-time (frontend, baked into the bundle) versus runtime (API, read from Application Settings) — this distinction isn't obvious from the SWA portal UI alone, and it's the single most common source of "my settings aren't working" confusion on this platform.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Static Web Apps · React</span>
+  </footer>
+</div>
+</body>
+</html>

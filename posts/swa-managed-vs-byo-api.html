@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Managed Functions vs Bring-Your-Own API for Static Web Apps — trace/log</title>
+<meta name="description" content="Static Web Apps offers a tightly integrated managed Functions API and a bring-your-own-backend option — the right choice depends on scaling, auth, and deployment lifecycle needs.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Managed Functions vs Bring-Your-Own API for Static Web Apps — trace/log">
+<meta property="og:description" content="Static Web Apps offers a tightly integrated managed Functions API and a bring-your-own-backend option — the right choice depends on scaling, auth, and deployment lifecycle needs.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Managed Functions vs Bring-Your-Own API for Static Web Apps — trace/log">
+<meta name="twitter:description" content="Static Web Apps offers a tightly integrated managed Functions API and a bring-your-own-backend option — the right choice depends on scaling, auth, and deployment lifecycle needs.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/swa-managed-vs-byo-api.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/swa-managed-vs-byo-api.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<style>
+  .compare-table{width:100%;border-collapse:collapse;margin:20px 0;font-size:14px;}
+  .compare-table th{font-family:var(--mono);font-size:11px;color:var(--azure);text-align:left;padding:10px 12px;border-bottom:2px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;}
+  .compare-table td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text-dim);}
+  .compare-table tr:last-child td{border-bottom:none;}
+  .compare-table td:first-child{color:var(--text);font-weight:500;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html" class="active">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/static-web-apps.html">Static Web Apps</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Managed Functions vs Bring-Your-Own API for Static Web Apps</h1>
+    <div class="post-meta">
+      <span>Architecture</span>
+      <span>Decision Guide</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>Static Web Apps offers two distinct ways to add an API backend, and picking the wrong one shows up later as a scaling or deployment limitation rather than an immediate error — worth understanding before you build against either.</p>
+
+    <h2><span class="tag tut">01</span>Managed Functions</h2>
+    <p>A Function App linked directly to the Static Web App, deployed and versioned together as one unit, with authentication handled automatically — <code>/api/*</code> routes are proxied to the Function App with the SWA auth context already attached, no extra wiring needed.</p>
+
+    <h2><span class="tag tut">02</span>Bring-your-own API</h2>
+    <p>An independently deployed API (a separately hosted Function App, App Service, or Container App) that the Static Web App links to rather than owns. You manage its deployment, scaling, and auth integration yourself.</p>
+
+    <table class="compare-table">
+      <tr><th>Consideration</th><th>Managed Functions</th><th>Bring-Your-Own API</th></tr>
+      <tr><td>Setup complexity</td><td>Low — built-in</td><td>Higher — separate resource, separate auth wiring</td></tr>
+      <tr><td>Deployment lifecycle</td><td>Tied to the SWA deploy</td><td>Independent — deploy on its own schedule</td></tr>
+      <tr><td>Scaling limits</td><td>Consumption-plan Functions limits</td><td>Whatever the backend's own plan supports</td></tr>
+      <tr><td>Auth integration</td><td>Automatic — SWA identity passed through</td><td>Manual — you validate the SWA-issued token yourself</td></tr>
+      <tr><td>Reuse across multiple frontends</td><td>No — tied to one SWA</td><td>Yes — same API can serve multiple clients</td></tr>
+      <tr><td>Best fit</td><td>Simple CRUD backing a single SWA</td><td>Substantial backend logic, or a backend already shared across apps</td></tr>
+    </table>
+
+    <h2><span class="tag tut">03</span>Decision guide</h2>
+    <ul>
+      <li><strong>Simple, SWA-specific backend logic</strong> → Managed Functions. The reduced setup and automatic auth integration outweigh the scaling ceiling for most CRUD-style backends.</li>
+      <li><strong>An API that already exists or is shared across multiple apps</strong> → Bring-your-own. Forcing a shared backend into the managed Functions model doesn't make sense.</li>
+      <li><strong>A backend that needs to scale well beyond Consumption plan limits,</strong> or needs a hosting model this site's <a href="../posts/webapps-runtime-stack-decision-guide.html" style="color:inherit;text-decoration:underline;">runtime stack guide</a> or <a href="../posts/containerapps-aci-vs-webapp-vs-aca.html" style="color:inherit;text-decoration:underline;">ACI/ACA guide</a> would point toward → Bring-your-own, hosted on whichever service actually fits the workload.</li>
+      <li><strong>Team ownership boundaries</strong> — if the frontend and backend are owned by different teams with different release cadences, bring-your-own avoids coupling their deployments together.</li>
+    </ul>
+
+    <div class="callout tut"><strong>The practical test:</strong> if you'd be happy deploying the API every time you deploy the frontend, and its scaling needs fit Consumption plan Functions, managed Functions is the simpler choice. The moment either of those stops being true, bring-your-own is usually the better fit even with the extra setup work.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Static Web Apps · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

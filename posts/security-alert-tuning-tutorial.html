@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setting Up Azure Monitor Alerts That Don't Wake You Up for Nothing — trace/log</title>
+<meta name="description" content="Step-by-step: build alert rules with dynamic thresholds and proper aggregation windows, so alerts trigger on genuine problems instead of normal variance.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Setting Up Azure Monitor Alerts That Don't Wake You Up for Nothing — trace/log">
+<meta property="og:description" content="Step-by-step: build alert rules with dynamic thresholds and proper aggregation windows, so alerts trigger on genuine problems instead of normal variance.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Setting Up Azure Monitor Alerts That Don't Wake You Up for Nothing — trace/log">
+<meta name="twitter:description" content="Step-by-step: build alert rules with dynamic thresholds and proper aggregation windows, so alerts trigger on genuine problems instead of normal variance.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/security-alert-tuning-tutorial.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/security-alert-tuning-tutorial.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html" class="active">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/security-monitoring.html">Security & Monitoring</a><span class="sep">/</span>
+    <span class="current">Tutorial</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Setting Up Azure Monitor Alerts That Don't Wake You Up for Nothing</h1>
+    <div class="post-meta">
+      <span>Intermediate</span>
+      <span>Azure Monitor</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>A static threshold alert ("fire when CPU &gt; 80%") is the easiest kind to set up and the easiest to get wrong — too tight and it pages on normal variance, too loose and it misses real problems. This walks through building alerts that account for a workload's actual behavior instead.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An Azure resource emitting metrics you want to alert on</li>
+        <li>An Action Group already created, or willingness to create one during this walkthrough</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Start from a real metric baseline, not a guess</h4>
+        <p>Before setting any threshold, pull the actual metric history over a representative period (at least a week, ideally including a peak period) using the <a href="security-kql-fundamentals-tutorial.html" style="color:inherit;text-decoration:underline;">KQL fundamentals</a> covered on this site, or the Metrics blade directly. A threshold set from documentation examples rather than your workload's real behavior is the root cause of most noisy alerts.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Prefer dynamic thresholds over static ones where available</h4>
+        <p>For metrics with natural daily/weekly patterns (request volume, CPU tied to business hours), a dynamic threshold — which learns normal variance and alerts on deviation from it — handles predictable variance far better than any single static number.</p>
+        <div class="code-block">
+          <div class="code-block-label">Conceptual difference</div>
+          <pre>Static:  alert if CPU > 80%
+Dynamic: alert if CPU deviates significantly from
+         its own learned pattern for this time of day/week</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Set an appropriate aggregation window</h4>
+        <p>A one-minute evaluation window on a naturally spiky metric fires constantly on noise; a window that's too long delays detection of genuine problems. Match the window to the metric's natural volatility — CPU often wants a longer window (5-15 min) than something like queue depth, which may need faster detection.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Use severity levels deliberately</h4>
+        <p>Not every alert should page someone immediately. Reserve Sev 0/1 for genuinely actionable, time-sensitive conditions, and route lower-severity signals to a dashboard or a non-paging notification channel instead.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Add alert processing rules for known maintenance windows</h4>
+        <p>Suppress or reroute alerts during planned deployments or maintenance, so a known, expected spike (like a deployment-triggered restart) doesn't generate a false page.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Review fired alerts periodically and tune</h4>
+        <p>Treat alert thresholds as living configuration, not a one-time setup. Periodically review which alerts fired and whether each was genuinely actionable — an alert that fires often but never leads to action is a tuning problem, not a monitoring success.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> alert rules that reflect a workload's actual behavior rather than a generic threshold — the difference between alerts a team trusts and acts on versus ones that get silently muted after the third false page.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Cross-cutting: Security & Monitoring · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>
