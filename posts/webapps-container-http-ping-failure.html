@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Container Didn't Respond to HTTP Pings on Port: Diagnosing Failed Site Starts — trace/log</title>
+<meta name="description" content="A container that fails to start with this exact error usually means it's listening on the wrong port, the wrong interface, or simply isn't ready before the platform's patience runs out.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Container Didn't Respond to HTTP Pings on Port: Diagnosing Failed Site Starts — trace/log">
+<meta property="og:description" content="A container that fails to start with this exact error usually means it's listening on the wrong port, the wrong interface, or simply isn't ready before the platform's patience runs out.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Container Didn't Respond to HTTP Pings on Port: Diagnosing Failed Site Starts — trace/log">
+<meta name="twitter:description" content="A container that fails to start with this exact error usually means it's listening on the wrong port, the wrong interface, or simply isn't ready before the platform's patience runs out.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-container-http-ping-failure.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-container-http-ping-failure.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Container Didn't Respond to HTTP Pings on Port: Diagnosing Failed Site Starts</h1>
+    <div class="post-meta">
+      <span>Web App for Containers</span>
+      <span>Startup</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>Site start fails with an error along the lines of "Container didn't respond to HTTP pings on port &lt;port&gt;." The container image builds and deploys successfully, and the same image may even run fine locally with <code>docker run</code> — the failure is specific to App Service's own startup verification.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Web App for Containers on App Service Linux</li>
+      <li>Custom container image, recently deployed or recently modified</li>
+      <li>Application inside the container may have a non-trivial startup sequence (migrations, cache warming, dependency initialization)</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>App Service pings the container on a specific port after starting it, and expects an HTTP response within a bounded startup window — if that doesn't happen, it considers the container failed regardless of whether the app would have eventually come up. Work through these in order:</p>
+    <ul>
+      <li><strong>Confirm the app actually listens on the port App Service expects.</strong> By default this is port 80 unless <code>WEBSITES_PORT</code> is explicitly set to match whatever port your app binds to — a mismatch here is the single most common cause.</li>
+      <li><strong>Confirm the app binds to all interfaces, not just localhost.</strong> An app listening on <code>127.0.0.1</code> instead of <code>0.0.0.0</code> is unreachable from outside its own network namespace, which is effectively how App Service's ping reaches it.</li>
+      <li><strong>Check how long startup actually takes.</strong> If the app has a genuinely slow startup sequence (large migrations, heavy cache warming), it may simply not be ready within the platform's default ping window.</li>
+      <li><strong>Check container logs from the failed start attempt</strong> via Log Stream or Kudu — confirm the app process is even starting successfully inside the container, as opposed to crashing before it would ever bind to a port.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the image works fine with a local <code>docker run</code>, this is sometimes treated as an Azure platform issue. Locally there's no equivalent of the startup ping timeout — the container just runs. The platform's specific expectations around port and readiness timing are what's different, not the container image itself.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>App Service needs to confirm a container is actually serving traffic before routing requests to it, and does this via an HTTP ping to a configured port within a startup time budget. A port mismatch, binding only to localhost, or a startup sequence that genuinely exceeds the ping window all produce the same "didn't respond" failure, even though the underlying causes are different — a wrong port is a configuration bug, while a slow startup is a timing problem that needs a different fix.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Set <code>WEBSITES_PORT</code> explicitly</strong> to match whatever port your app actually binds to, if it isn't 80.</li>
+      <li><strong>Bind to <code>0.0.0.0</code></strong> rather than <code>localhost</code>/<code>127.0.0.1</code> in your application's server configuration.</li>
+      <li><strong>If startup is genuinely slow,</strong> increase the startup time budget via the <code>WEBSITES_CONTAINER_START_TIME_LIMIT</code> app setting, and separately consider whether startup work (migrations, cache warming) can be moved out of the request-serving container's critical path.</li>
+      <li><strong>Add a lightweight readiness endpoint</strong> that responds quickly even while heavier initialization continues in the background, if your app architecture allows separating "process is up" from "fully ready to serve real traffic."</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> test any new container image against App Service's actual startup ping behavior — not just a local <code>docker run</code> — before treating a deployment as validated, since the local test doesn't exercise the specific port/timing expectations that cause this failure in production.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ChromeDriver Port Conflicts on App Service: Migrating from a Persistent Service to On-Demand Instances — trace/log</title>
+<meta name="description" content="A single, persistent ChromeDriver service works fine at low volume, then starts failing intermittently under concurrency — the fix is architectural, not a timeout increase.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="ChromeDriver Port Conflicts on App Service: Migrating from a Persistent Service to On-Demand Instances — trace/log">
+<meta property="og:description" content="A single, persistent ChromeDriver service works fine at low volume, then starts failing intermittently under concurrency — the fix is architectural, not a timeout increase.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ChromeDriver Port Conflicts on App Service: Migrating from a Persistent Service to On-Demand Instances — trace/log">
+<meta name="twitter:description" content="A single, persistent ChromeDriver service works fine at low volume, then starts failing intermittently under concurrency — the fix is architectural, not a timeout increase.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/webapps-chromedriver-port-conflicts.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/webapps-chromedriver-port-conflicts.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html" class="active">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/web-apps.html">Web Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · PHP</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>ChromeDriver Port Conflicts on App Service: Migrating from a Persistent Service to On-Demand Instances</h1>
+    <div class="post-meta">
+      <span>PHP</span>
+      <span>ChromeDriver</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A PHP script driving headless Chrome via a shared ChromeDriver service (managed by Supervisor, listening on a fixed port like 9515) works reliably when run one at a time, but starts throwing connection errors, session conflicts, or unexplained hangs as soon as more than one script runs concurrently.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>PHP on App Service Linux, custom container with Chrome/ChromeDriver installed</li>
+      <li>ChromeDriver running as a single, Supervisor-managed persistent service on a fixed port</li>
+      <li>Multiple requests or scheduled scripts potentially overlapping in execution</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Confirm this is a concurrency issue specifically by checking whether failures correlate with overlapping script executions rather than any single script's own logic. A single ChromeDriver process handles one WebDriver session cleanly, but a second concurrent request either queues behind the first (causing apparent hangs) or, depending on how sessions are managed, can cross-contaminate state between unrelated automation runs.</p>
+    <ul>
+      <li>Check process listings during a failure window for multiple PHP scripts attempting to talk to the same ChromeDriver port simultaneously.</li>
+      <li>Correlate failure timestamps against your scheduling/triggering mechanism — cron jobs, queued requests, or concurrent HTTP calls that happen to overlap.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> intermittent failures under load are often chased with timeout increases or retry logic layered on top of the shared-service architecture. This treats the symptom rather than the cause — a shared, stateful ChromeDriver service fundamentally isn't designed for concurrent unrelated sessions, and no amount of retrying fixes that.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>A single ChromeDriver instance on a fixed port serves one browser session cleanly, but concurrent scripts sharing that same instance either collide on the port, contend for the same underlying browser session, or interfere with each other's Chrome profile state. This architecture works by coincidence at low volume — the moment two automation runs genuinely overlap in time, the shared service becomes a bottleneck and a source of cross-request interference.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <p>Move from one shared, persistent ChromeDriver service to on-demand, isolated instances — one ChromeDriver process per script execution, on a random port, with its own Chrome profile directory. This is the architecture covered in the <a href="webapps-php-chromedriver-tutorial.html" style="color:inherit;text-decoration:underline;">PHP Chrome automation tutorial</a> on this site.</p>
+    <ul>
+      <li><strong>Start ChromeDriver per-script</strong> via <code>ChromeDriver::start()</code> rather than connecting to a shared, pre-running instance.</li>
+      <li><strong>Use a unique profile directory per instance</strong> (e.g. <code>/tmp/chrome-profiles/profile-{uniqid}</code>) so concurrent sessions never share Chrome's own state.</li>
+      <li><strong>Remove the Supervisor-managed persistent ChromeDriver service</strong> entirely once migrated — leaving it running alongside the new pattern reintroduces the exact port conflict this fix removes.</li>
+      <li><strong>Add cleanup for orphaned profile directories</strong> on a schedule, since a script that crashes before cleanup can leave a stale profile directory behind.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> if a new automation workload is being designed, default to the on-demand instance pattern from the start rather than a shared service — the shared-service approach's problems only appear under concurrency, which means they're easy to miss during initial development and testing at low volume.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Web Apps · PHP</span>
+  </footer>
+</div>
+</body>
+</html>

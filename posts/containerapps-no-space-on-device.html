@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>"No Space on Device" Errors on Container Apps — trace/log</title>
+<meta name="description" content="A container that fails writing to disk with 'no space on device' is usually hitting a small ephemeral storage limit, not the underlying host's actual disk capacity.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="&quot;No Space on Device&quot; Errors on Container Apps — trace/log">
+<meta property="og:description" content="A container that fails writing to disk with 'no space on device' is usually hitting a small ephemeral storage limit, not the underlying host's actual disk capacity.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="&quot;No Space on Device&quot; Errors on Container Apps — trace/log">
+<meta name="twitter:description" content="A container that fails writing to disk with 'no space on device' is usually hitting a small ephemeral storage limit, not the underlying host's actual disk capacity.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-no-space-on-device.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-no-space-on-device.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>"No Space on Device" Errors on Container Apps</h1>
+    <div class="post-meta">
+      <span>Ephemeral Storage</span>
+      <span>Container Apps</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>An application inside a Container App fails a disk write operation with an error like "no space left on device," despite the workload not appearing to handle unusually large amounts of data. This often surfaces during deployment, logging, or any operation writing temporary files to the container's local filesystem.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Apps, any plan</li>
+      <li>Application writing to local disk — temp files, local caching, log files, or build artifacts during a container build step</li>
+      <li>No explicit volume mount configured for the affected path</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Container Apps provides a limited amount of ephemeral local storage per replica by default — this is separate from, and much smaller than, whatever disk capacity the underlying host has. An app that assumes it has substantial local disk space to work with (writing large temp files, aggressive local caching, verbose logging without rotation) can exhaust this quickly even though the workload doesn't seem unusually large in absolute terms.</p>
+    <ul>
+      <li>Check what's actually writing to disk — application logs, temp file generation, or a caching layer are the most common culprits.</li>
+      <li>Confirm whether logs are rotated or bounded — unbounded log growth inside the container is a frequent, easy-to-miss cause.</li>
+      <li>Check if the workload was recently changed to process larger files or datasets than before, without a corresponding change to how (or whether) it uses persistent storage instead of local disk.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> teams sometimes assume this reflects a genuine platform capacity issue and try to work around it with retries or by reducing workload size marginally. The actual constraint is the ephemeral storage allocation specific to Container Apps, not the underlying infrastructure's real capacity — the fix is architectural (external storage) rather than incremental (write less).</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Each Container Apps replica gets ephemeral local storage sized for typical container workloads — enough for normal application operation, but not intended as a substitute for genuine persistent or bulk storage. Applications ported from an environment with generous local disk (a VM, a container host with large volumes) can hit this ceiling unexpectedly if they weren't designed with ephemeral storage constraints in mind.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Move bulk or persistent data to Azure Files or Blob Storage</strong> rather than the container's local filesystem — mount Azure Files as a volume for anything that needs to persist or exceeds ephemeral storage limits.</li>
+      <li><strong>Bound and rotate application logs</strong> rather than letting them grow unbounded inside the container — ship logs to Log Analytics instead of relying on local log files for anything beyond transient debugging.</li>
+      <li><strong>Stream large data rather than buffering it fully to local disk</strong> where the workload allows it — processing data in chunks avoids needing local storage proportional to the full dataset size.</li>
+      <li><strong>Clean up temp files explicitly</strong> within long-running processes rather than assuming the container's ephemeral storage will be reset frequently enough to not matter.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when migrating a workload to Container Apps from a VM or a hosting model with more generous local disk, explicitly audit what it writes to local disk and how much — this is exactly the kind of assumption that survives a migration undetected until real production data volume exposes it.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+</div>
+</body>
+</html>

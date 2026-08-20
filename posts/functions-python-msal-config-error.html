@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Confusing MSAL URL Error on Function Startup: Diagnosing Missing Azure AD Environment Variables — trace/log</title>
+<meta name="description" content="A ValueError about an invalid HTTPS URL for login.microsoftonline.com almost always means an empty CLIENT_ID or TENANT_ID environment variable, not a real URL problem.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Confusing MSAL URL Error on Function Startup: Diagnosing Missing Azure AD Environment Variables — trace/log">
+<meta property="og:description" content="A ValueError about an invalid HTTPS URL for login.microsoftonline.com almost always means an empty CLIENT_ID or TENANT_ID environment variable, not a real URL problem.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Confusing MSAL URL Error on Function Startup: Diagnosing Missing Azure AD Environment Variables — trace/log">
+<meta name="twitter:description" content="A ValueError about an invalid HTTPS URL for login.microsoftonline.com almost always means an empty CLIENT_ID or TENANT_ID environment variable, not a real URL problem.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/functions-python-msal-config-error.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/functions-python-msal-config-error.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html" class="active">Functions</a>
+      <a href="../domains/container-apps.html">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/functions.html">Functions</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Python</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Confusing MSAL URL Error on Function Startup: Diagnosing Missing Azure AD Environment Variables</h1>
+    <div class="post-meta">
+      <span>Python</span>
+      <span>MSAL · Azure AD</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Python Function using MSAL for Azure AD authentication (for example, to call Microsoft Graph) fails immediately with an error like:</p>
+    <div class="code-block">
+      <div class="code-block-label">Error</div>
+      <pre>ValueError: Your given address (https://login.microsoftonline.com/)
+should consist of an https url with a minimum of one segment in a path</pre>
+    </div>
+    <p>The error is confusing on its face — it looks like a malformed URL problem, but nothing in application code constructs URLs directly.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Python Azure Function using MSAL (<code>ConfidentialClientApplication</code> or similar) for Azure AD auth</li>
+      <li>Credentials expected to come from environment variables (<code>TENANT_ID</code>, <code>CLIENT_ID</code>, <code>CLIENT_SECRET</code>)</li>
+      <li>Recently deployed, or recently changed configuration/settings</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>The error message is MSAL's way of saying the authority URL it tried to build is incomplete — and that authority URL is normally built by appending your tenant ID to <code>https://login.microsoftonline.com/</code>. If <code>TENANT_ID</code> is empty or unset, the resulting URL is just the base with nothing appended, which is exactly the "no segment in a path" condition the error describes.</p>
+    <ul>
+      <li>Check whether <code>TENANT_ID</code>, <code>CLIENT_ID</code>, and <code>CLIENT_SECRET</code> are actually set in the environment the function is running in — locally via <code>local.settings.json</code>, or in Azure via Application Settings.</li>
+      <li>Print (or log, never to a place users can see) the actual authority URL being constructed right before the MSAL call, to confirm it's missing the tenant segment.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the error text mentions a URL, it's easy to go looking for a malformed configuration value or a typo in a URL somewhere in code. The actual missing piece is usually a plain empty environment variable — nothing in the error message says "environment variable" directly, which is what makes this one genuinely confusing on a first encounter.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>MSAL constructs its authority URL by combining the base Microsoft identity platform URL with your tenant ID. When <code>TENANT_ID</code> (or the equivalent value your code reads it from) is empty — commonly because required environment variables were never set in a new environment, a fresh deployment, or a local dev setup that skipped the config step — the resulting URL has no tenant segment, and MSAL's URL validation catches this as invalid before ever attempting a network call.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Set the required environment variables</strong> — <code>TENANT_ID</code>, <code>CLIENT_ID</code>, <code>CLIENT_SECRET</code> — in Application Settings for the deployed Function App, and in <code>local.settings.json</code> for local development.</li>
+      <li><strong>Add explicit validation at module import or startup,</strong> rather than letting a missing value surface later as a cryptic downstream error. Checking for required config immediately and raising a clear, actionable error message turns a confusing MSAL stack trace into an obvious "you forgot to set X" message.</li>
+      <li><strong>Provide dummy credentials in test configuration</strong> (e.g. in <code>conftest.py</code> for pytest) so automated tests that mock the actual Azure AD calls don't fail on missing config unrelated to what they're testing.</li>
+      <li><strong>Document the required variables clearly</strong> — a <code>.env.example</code> file or equivalent template listing every required setting saves the next person (including future you) from rediscovering this the hard way.</li>
+    </ul>
+    <div class="code-block">
+      <div class="code-block-label">Python — validate early, fail clearly</div>
+      <pre>import os
+
+required = ["TENANT_ID", "CLIENT_ID", "CLIENT_SECRET"]
+missing = [v for v in required if not os.environ.get(v)]
+if missing:
+    raise ValueError(
+        f"Missing required environment variables: {', '.join(missing)}. "
+        f"See .env.example for setup instructions."
+    )</pre>
+    </div>
+
+    <div class="callout"><strong>Prevention tip:</strong> validate required configuration at the top of your entry module rather than inside the specific function that first uses it — this fails fast with a clear message the moment the app starts, instead of an hour into a scheduled job hitting the one code path that actually calls MSAL.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Functions · Python</span>
+  </footer>
+</div>
+</body>
+</html>

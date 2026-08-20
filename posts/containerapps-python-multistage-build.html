@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trimming Python Container Images with Multi-Stage Docker Builds — trace/log</title>
+<meta name="description" content="Step-by-step: separate build-time dependencies from the runtime image for a Python container, cutting image size and pull time without changing application behavior.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Trimming Python Container Images with Multi-Stage Docker Builds — trace/log">
+<meta property="og:description" content="Step-by-step: separate build-time dependencies from the runtime image for a Python container, cutting image size and pull time without changing application behavior.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Trimming Python Container Images with Multi-Stage Docker Builds — trace/log">
+<meta name="twitter:description" content="Step-by-step: separate build-time dependencies from the runtime image for a Python container, cutting image size and pull time without changing application behavior.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-python-multistage-build.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-python-multistage-build.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Tutorial · Python</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-tut">TUTORIAL</span></div>
+    <h1>Trimming Python Container Images with Multi-Stage Docker Builds</h1>
+    <div class="post-meta">
+      <span>Intermediate</span>
+      <span>Python</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="post-body">
+
+    <p>A naive Python Dockerfile bakes compilers, build tools, and cached wheel files into the final image — none of which the running application needs. A multi-stage build separates what's needed to <em>build</em> dependencies from what's needed to <em>run</em> the app, often cutting image size substantially and speeding up cold starts tied to image pull time.</p>
+
+    <div class="prereqs">
+      <div class="prereqs-label">Before you start</div>
+      <ul>
+        <li>An existing single-stage Python Dockerfile</li>
+        <li>Any dependencies with native extensions that require build tools (common culprits: cryptography, numpy, psycopg2)</li>
+      </ul>
+    </div>
+
+    <ol class="tut-steps">
+      <li class="tut-step">
+        <h4>Identify the naive baseline</h4>
+        <p>A typical single-stage Dockerfile installs build tools, then dependencies, all in one image layer that ships to production carrying compiler toolchains it will never use again after the build step.</p>
+        <div class="code-block">
+          <div class="code-block-label">Dockerfile — single-stage (before)</div>
+          <pre>FROM python:3.12
+RUN apt-get update && apt-get install -y build-essential
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python", "app.py"]</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Split into a build stage</h4>
+        <p>Use a first stage specifically for installing dependencies, including any build tools needed for native extensions — this stage's size doesn't matter since it's discarded.</p>
+        <div class="code-block">
+          <div class="code-block-label">Dockerfile — build stage</div>
+          <pre>FROM python:3.12 AS builder
+RUN apt-get update && apt-get install -y build-essential
+COPY requirements.txt .
+RUN pip install --user -r requirements.txt</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Copy only the installed packages into a slim runtime stage</h4>
+        <p>The second stage starts from a slim base image and copies just the installed Python packages from the build stage — no compilers, no build-time cache.</p>
+        <div class="code-block">
+          <div class="code-block-label">Dockerfile — runtime stage</div>
+          <pre>FROM python:3.12-slim
+COPY --from=builder /root/.local /root/.local
+COPY . .
+ENV PATH=/root/.local/bin:$PATH
+CMD ["python", "app.py"]</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Compare image sizes</h4>
+        <p>Build both versions and compare — the runtime-only image is typically meaningfully smaller, sometimes by several hundred megabytes depending on how many native-extension dependencies your app has.</p>
+        <div class="code-block">
+          <div class="code-block-label">bash</div>
+          <pre>docker images | grep myapp</pre>
+        </div>
+      </li>
+      <li class="tut-step">
+        <h4>Verify the app still runs correctly</h4>
+        <p>Native extensions compiled in the build stage need to be compatible with the runtime stage's base image — using the same base OS/Python version for both stages (just <code>-slim</code> vs full for the runtime) avoids the kind of glibc/library mismatch covered in the <a href="containerapps-glibc-not-found.html" style="color:inherit;text-decoration:underline;">GLIBC troubleshooting post</a> on this site.</p>
+      </li>
+      <li class="tut-step">
+        <h4>Consider further trimming with distroless or alpine bases</h4>
+        <p>For further size reduction, evaluate a distroless or Alpine-based runtime image — but test thoroughly, since Alpine's musl libc can reintroduce native-extension compatibility issues if any dependency wasn't built with musl compatibility in mind.</p>
+      </li>
+    </ol>
+
+    <div class="callout tut"><strong>Result:</strong> a meaningfully smaller runtime image with faster pulls and cold starts, without changing anything about how the application actually runs — a straightforward, low-risk optimization for any Python container that isn't already using multi-stage builds.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps · Python · Tutorial</span>
+  </footer>
+</div>
+</body>
+</html>

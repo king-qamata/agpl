@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Node.js Containers OOMKilled on Container Apps: Setting --max-old-space-size — trace/log</title>
+<meta name="description" content="Node's V8 engine sizes its default heap against total system memory, not the container's cgroup limit — a mismatch that shows up as OOMKilled under memory pressure.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Node.js Containers OOMKilled on Container Apps: Setting --max-old-space-size — trace/log">
+<meta property="og:description" content="Node's V8 engine sizes its default heap against total system memory, not the container's cgroup limit — a mismatch that shows up as OOMKilled under memory pressure.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Node.js Containers OOMKilled on Container Apps: Setting --max-old-space-size — trace/log">
+<meta name="twitter:description" content="Node's V8 engine sizes its default heap against total system memory, not the container's cgroup limit — a mismatch that shows up as OOMKilled under memory pressure.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-nodejs-oomkilled.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-nodejs-oomkilled.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Node.js</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Node.js Containers OOMKilled on Container Apps: Setting --max-old-space-size</h1>
+    <div class="post-meta">
+      <span>Node.js</span>
+      <span>OOMKilled</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Node.js container gets killed under memory pressure — visible as an OOMKilled event in the container's system logs — during workloads that shouldn't be pushing memory usage anywhere near the container's configured limit, particularly on containers given a relatively small memory allocation.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Node.js application in a container on Azure Container Apps</li>
+      <li>Container memory limit set to a value smaller than the host's total memory (typical for right-sized containers, e.g. 512Mi–1Gi)</li>
+      <li>No explicit V8 heap size flags set at container build or startup</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Check what heap limit Node/V8 is actually using by default, and compare it against the container's memory limit.</p>
+    <div class="code-block">
+      <div class="code-block-label">bash — check V8's default old space size</div>
+      <pre>node -e "console.log(require('v8').getHeapStatistics().heap_size_limit / 1024 / 1024, 'MB')"</pre>
+    </div>
+    <p>If this number is significantly larger than the container's memory limit, that's the mismatch — V8's default heap sizing is based on available system memory as reported to the process, which in many container configurations reflects the <em>host's</em> total memory rather than the container's own cgroup-imposed limit.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> an OOMKilled Node container is often investigated as an application memory leak first — profiling, heap snapshots, hunting for a growing object. If V8's own reported heap limit is already larger than the container's memory budget, the container can be killed under normal, non-leaking memory usage simply because V8 believes it has more room than it actually does.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>V8 sizes its default heap limit based on the system memory it detects, and depending on the Node.js version and container runtime configuration, that detection may not correctly reflect the container's actual cgroup memory limit — instead reflecting the underlying host's total memory. This means V8 can allow the heap to grow toward a ceiling that's larger than what the container is actually permitted to use, and the container runtime kills the process once total memory usage (heap plus everything else) exceeds the real limit, regardless of what V8 itself believes its ceiling is.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Set <code>--max-old-space-size</code> explicitly</strong>, sized conservatively below the container's memory limit to leave room for non-heap memory (V8's own overhead, native modules, buffers).</li>
+      <li><strong>Account for memory outside the V8 heap</strong> — Buffers, native addon memory, and the Node.js runtime itself all consume container memory that <code>--max-old-space-size</code> doesn't cover; don't set the flag to a value close to the full container limit.</li>
+      <li><strong>Use a recent Node.js LTS version</strong> where container memory detection has generally improved, and verify behavior specifically on your chosen base image rather than assuming it's correct by default.</li>
+      <li><strong>Load test at the target container memory limit</strong> to confirm the chosen heap size setting actually prevents OOMKilled under realistic load, the same verification step used in the <a href="containerapps-capacity-planning-tutorial.html" style="color:inherit;text-decoration:underline;">capacity planning tutorial</a> on this site.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> set <code>--max-old-space-size</code> explicitly as a standard part of any Node.js container's startup configuration, rather than relying on V8's automatic detection — treat it as required configuration for containerized Node, not an optional tuning knob.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps · Node.js</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Java on Container Apps: Setting JVM Heap Limits to Match Container Memory — trace/log</title>
+<meta name="description" content="A Java container OOMKilled well below its memory limit is usually the JVM sizing its heap against the host's total memory instead of the container's actual cgroup limit.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Java on Container Apps: Setting JVM Heap Limits to Match Container Memory — trace/log">
+<meta property="og:description" content="A Java container OOMKilled well below its memory limit is usually the JVM sizing its heap against the host's total memory instead of the container's actual cgroup limit.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Java on Container Apps: Setting JVM Heap Limits to Match Container Memory — trace/log">
+<meta name="twitter:description" content="A Java container OOMKilled well below its memory limit is usually the JVM sizing its heap against the host's total memory instead of the container's actual cgroup limit.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-java-jvm-memory.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-java-jvm-memory.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting · Java</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-1">SEV-1 · TROUBLESHOOTING</span></div>
+    <h1>Java on Container Apps: Setting JVM Heap Limits to Match Container Memory</h1>
+    <div class="post-meta">
+      <span>Java</span>
+      <span>OOMKilled</span>
+      <span>7 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A Java container gets killed and restarted with an out-of-memory condition, even though the application's actual working set looks well within the container's configured memory limit — for example, a container limited to 1Gi getting killed when the app itself doesn't appear to be using anywhere near that much.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Java application in a container on Azure Container Apps</li>
+      <li>Container memory request/limit set explicitly (e.g. 1Gi)</li>
+      <li>Base image is a general-purpose JDK image, or JVM flags weren't set explicitly for container awareness</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Check what heap size the JVM actually chose at startup versus what you'd expect given the container's memory limit — this is visible via a startup flag or by inspecting the running JVM.</p>
+    <div class="code-block">
+      <div class="code-block-label">bash — check the JVM's chosen max heap</div>
+      <pre>java -XX:+PrintFlagsFinal -version | grep -i maxheapsize</pre>
+    </div>
+    <p>If the reported max heap is much larger than a value that would fit comfortably within the container's memory limit (accounting for non-heap JVM overhead — thread stacks, metaspace, direct buffers), that's the signal: the JVM sized its heap against a memory figure that doesn't match the actual container constraint.</p>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> this gets treated as a memory leak in application code, and teams start profiling heap usage or hunting for leaks. If the container is killed well before the application's own heap usage looks concerning, the JVM's heap sizing relative to the container limit — not a leak — is the more likely first thing to check.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Modern JDKs (10+) are container-aware by default and size the heap based on the container's cgroup memory limit rather than the host's total memory — but this depends on the JVM correctly detecting that limit, and on the container's total memory budget correctly accounting for everything outside the heap (metaspace, thread stacks, JIT compiled code cache, direct byte buffers). A heap sized as a naive fraction of the container's total memory limit, without headroom for that non-heap overhead, means the JVM's actual total memory footprint exceeds the container's limit even though the heap itself is "within bounds" — and the container runtime kills the process for exceeding its cgroup limit.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Set an explicit, conservative max heap</strong> rather than relying entirely on the JVM's automatic sizing — <code>-XX:MaxRAMPercentage</code> set to something like 50-70% (not close to 100%) leaves headroom for non-heap memory.</li>
+      <li><strong>Account for non-heap memory explicitly</strong> — metaspace, thread stacks (multiplied by thread count), and direct buffers all consume container memory outside the Java heap; size the container's memory limit with this overhead in mind, not just the intended heap size.</li>
+      <li><strong>Verify container-awareness is actually active</strong> — confirm the specific base image and JDK version correctly detects cgroup limits; some minimal or older images have had inconsistent behavior here.</li>
+      <li><strong>Load test at the target container memory limit</strong> before shipping, watching for OOMKilled events specifically, not just apparent heap usage from inside the JVM.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> for the <a href="containerapps-capacity-planning-tutorial.html" style="color:inherit;text-decoration:underline;">Container Apps capacity planning</a> exercise covered elsewhere on this site, treat JVM memory configuration as part of that sizing exercise specifically for Java workloads — the container memory limit and the JVM's own flags need to be reasoned about together, not set independently.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps · Java</span>
+  </footer>
+</div>
+</body>
+</html>

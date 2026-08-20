@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Revisions Stuck in "Activating" State on Container Apps — trace/log</title>
+<meta name="description" content="A revision stuck in Activating, rather than Provisioning, means the container started but never passed its own readiness or liveness probe — a different failure point from a sidecar or networking issue.">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="trace/log">
+<meta property="og:title" content="Revisions Stuck in &quot;Activating&quot; State on Container Apps — trace/log">
+<meta property="og:description" content="A revision stuck in Activating, rather than Provisioning, means the container started but never passed its own readiness or liveness probe — a different failure point from a sidecar or networking issue.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Revisions Stuck in &quot;Activating&quot; State on Container Apps — trace/log">
+<meta name="twitter:description" content="A revision stuck in Activating, rather than Provisioning, means the container started but never passed its own readiness or liveness probe — a different failure point from a sidecar or networking issue.">
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<link rel="apple-touch-icon" href="../assets/favicon-180.png">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="canonical" href="https://king-qamata.github.io/agpl/posts/containerapps-revision-activating-stuck.html">
+<meta property="og:url" content="https://king-qamata.github.io/agpl/posts/containerapps-revision-activating-stuck.html">
+<meta property="og:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:image" content="https://king-qamata.github.io/agpl/assets/og-card.jpg">
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a href="../index.html" class="logo"><img src="../assets/logo.png" class="logo-img" alt="trace/log">trace/log</a>
+    <nav>
+      <a href="../domains/web-apps.html">Web Apps</a>
+      <a href="../domains/functions.html">Functions</a>
+      <a href="../domains/container-apps.html" class="active">Container Apps</a>
+      <a href="../domains/static-web-apps.html">Static Web Apps</a>
+      <a href="../domains/security-monitoring.html">Security & Monitoring</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="breadcrumb">
+    <a href="../index.html">Home</a><span class="sep">/</span>
+    <a href="../domains/container-apps.html">Container Apps</a><span class="sep">/</span>
+    <span class="current">Troubleshooting</span>
+  </div>
+
+  <div class="post-header">
+    <div class="post-sev"><span class="sev sev-2">SEV-2 · TROUBLESHOOTING</span></div>
+    <h1>Revisions Stuck in "Activating" State on Container Apps</h1>
+    <div class="post-meta">
+      <span>Revisions</span>
+      <span>Health Probes</span>
+      <span>6 min read</span>
+    </div>
+  </div>
+
+  <div class="stepper">
+    <div class="step"><span class="step-num">01</span>SYMPTOM</div>
+    <div class="step"><span class="step-num">02</span>ENVIRONMENT</div>
+    <div class="step"><span class="step-num">03</span>DIAGNOSIS</div>
+    <div class="step"><span class="step-num">04</span>ROOT CAUSE</div>
+    <div class="step"><span class="step-num">05</span>FIX</div>
+  </div>
+
+  <div class="post-body">
+
+    <h2><span class="tag">01</span>Symptom</h2>
+    <p>A revision reaches <strong>Activating</strong> status and stays there indefinitely, never transitioning to <strong>Running</strong>. This is a distinct failure point from a revision stuck in <strong>Provisioning</strong> (covered in the <a href="containerapps-dapr-sidecar-checklist.html" style="color:inherit;text-decoration:underline;">Dapr sidecar checklist</a> on this site) — by the time a revision reaches Activating, the container image itself has already been pulled and the container has started.</p>
+
+    <h2><span class="tag">02</span>Environment</h2>
+    <ul>
+      <li>Azure Container Apps, revision recently created or updated</li>
+      <li>Container starts successfully (visible in console logs) but the revision doesn't progress to Running</li>
+      <li>Custom liveness or readiness probes may be configured</li>
+    </ul>
+
+    <h2><span class="tag">03</span>Diagnosis</h2>
+    <p>Activating specifically means the container process has started but hasn't yet passed the checks Container Apps uses to decide it's ready to receive traffic. Unlike a Provisioning-stuck revision (usually a Dapr or environment-level issue), an Activating-stuck revision points at the container's own health signaling:</p>
+    <ul>
+      <li><strong>Check configured liveness/readiness probes</strong> — if a custom probe path is set, confirm the application actually serves a successful response on that exact path and port.</li>
+      <li><strong>Check whether the app takes longer to become ready than the probe's failure threshold allows</strong> — a probe with a short timeout and low failure threshold can mark an otherwise-healthy but slow-starting app as failed before it ever gets a chance to respond.</li>
+      <li><strong>Check console logs for the container</strong> (via the <a href="containerapps-kql-primer-tutorial.html" style="color:inherit;text-decoration:underline;">KQL primer</a> on this site) for errors occurring after startup but before the app would normally start serving — a crash loop after initial start looks like "stuck Activating" from the platform's perspective.</li>
+    </ul>
+
+    <div class="callout"><strong>Common misdiagnosis:</strong> because the container clearly starts (it shows up in logs, the process is running), teams sometimes assume the platform itself is stuck. If a probe is configured and never returns success, or the app crashes shortly after starting, the platform is behaving correctly — it's accurately reporting that the container never became healthy.</div>
+
+    <h2><span class="tag">04</span>Root Cause</h2>
+    <p>Container Apps won't mark a revision Running until the container demonstrates it's actually ready to serve traffic, via either a default TCP-based check or a custom HTTP liveness/readiness probe if configured. A probe pointed at the wrong path or port, a probe timeout too aggressive for the app's real startup time, or an application that crashes shortly after starting (rather than failing immediately) all leave the revision stuck exactly at this stage.</p>
+
+    <h2><span class="tag">05</span>Fix</h2>
+    <ul>
+      <li><strong>Verify probe configuration matches reality</strong> — confirm the path, port, and expected response code in the probe definition against what the application actually serves.</li>
+      <li><strong>Loosen probe timing if startup is legitimately slow</strong> — increase the initial delay and failure threshold to give the app a realistic window to become ready before being marked unhealthy.</li>
+      <li><strong>Fix any post-startup crash</strong> surfaced in console logs — this is a normal application bug at that point, not a Container Apps platform issue, and should be debugged the same as any other runtime crash.</li>
+      <li><strong>Test probes locally first</strong> where possible — curl the exact probe path against a locally running container to confirm it returns the expected response before deploying.</li>
+    </ul>
+
+    <div class="callout"><strong>Prevention tip:</strong> when adding a custom health probe to a Container App, deliberately test both the success and slow-startup cases — a probe that's never been tested against a genuinely slow cold start will often turn out to be misconfigured exactly when it matters most, during a real deployment under load.</div>
+
+  </div>
+
+  <footer>
+    <span>trace/log — field notes, not marketing</span>
+    <span>Domain: Container Apps</span>
+  </footer>
+</div>
+</body>
+</html>
